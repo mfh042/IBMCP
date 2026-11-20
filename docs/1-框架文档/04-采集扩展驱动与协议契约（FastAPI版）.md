@@ -1,8 +1,9 @@
 ﻿# IBMCP 采集扩展驱动能力与协议契约（FastAPI 版）
 
 >
-版本：v1.0　　编写日期：2026-11-18　　配套：[01-架构设计](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/FASTAPI架构/01-IBMCP-FastAPI重构架构设计.md) · [02-数据模型](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/FASTAPI架构/02-数据模型与字段契约（FastAPI版）.md) · [03-接口契约](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/FASTAPI架构/03-接口契约与功能对照（FastAPI版）.md)
+版本：v1.1　　编写日期：2026-11-18　　配套：[01-架构设计](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/01-IBMCP-FastAPI重构架构设计.md) · [02-数据模型](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/02-数据模型与字段契约（FastAPI版）.md) · [03-接口契约](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/03-接口契约与功能对照（FastAPI版）.md)
 >
+> **v1.1 变更（2026-11-20）**：① §7.4 构建安装口径由 `pip install ./backend` 改为项目根 `pip install .`（`pyproject.toml` 在项目根，`backend/` 下无 `pyproject.toml`，故不用 `pip install ./backend`）；② §8.1 构建依赖表 `python3-devel` 改为 `python3.11-devel`（仅头文件，由 `build.sh` 按需补装），明确解释器用系统自带 python3.11、不单独装。
 > **本文档定位**：把 `开发指南/04-装备通讯协议完善指南` 中的
 > **协议实现现状、驱动契约、地址语义、并发模型、三套工业库实测结果、欧拉侧依赖清单**，重写为 **C++ 采集扩展（Python 包
 > `industrial_collector`，内部模块 `_core`）** 的设计依据。
@@ -10,7 +11,7 @@
 > FastAPI 同进程 import 的采集库**"的线程与内存模型。采集逻辑可大量复用，但**生命周期、线程所有权、错误传播方式全部改变**。
 >
 > 接口形态、构建方式、GIL
-> 与异常边界以 [05-绑定与分层契约](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/FASTAPI架构/05-pybind11绑定与C++Python分层契约.md)
+> 与异常边界以 [05-绑定与分层契约](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/05-pybind11绑定与C++Python分层契约.md)
 > 为准；本文档只负责**驱动与协议侧契约**。
 
 ---
@@ -31,7 +32,13 @@
 
 ### 1.2 已具备的基础设施（可直接迁移到扩展）
 
-| 能力                                                                           | 旧位置                                   | 迁移到扩展后的形态                                                |
+> ⚠️ **本表"旧位置"列指的是旧 Drogon 工程（`01-IBMCP`）里的文件名，不是本仓库 `collector-cpp/src/` 的现状。**
+> 本仓库当前已落地的 C++ 源文件只有 10 个（`module.cpp` / `collector.cpp` / `timewheel.cpp` / `io_pool.cpp` /
+> `data_store.cpp` / `plan_parser.cpp` / `plan_validator.cpp` / `event_emitter.cpp` / `logger.cpp` /
+> `driver_factory.cpp`），且命名统一为 **snake_case**。表中 `BaseDriver.h`、`ModbusDriver.cpp`、`ModbusCodec.h`、
+> `CollectorService.cpp` 等属于**待迁移的目标文件**，尚未进入本仓库——按第七章 CMake 清单为准，不要照本表去找文件。
+
+| 能力                                                                           | 旧位置（旧 Drogon 工程）                 | 迁移到扩展后的形态                                                |
 |--------------------------------------------------------------------------------|------------------------------------------|-------------------------------------------------------------------|
 | 驱动抽象接口 `IDeviceDriver`                                                   | `include/drivers/IDeviceDriver.h`        | **保留**，`DriverPoint` 字段对齐 plan                             |
 | 公共基类 `BaseDriver`（连接生命周期 + 换算）                                   | `BaseDriver.h`                           | **保留**，`toEngineValue` / `toRawValue` 原样                     |
@@ -68,7 +75,7 @@ Python 回调、又要在 Python 进程里跑，两套事件循环（Trantor + a
 
 | 链路                                  | 旧实现                                  | 新实现                                   |
 |---------------------------------------|-----------------------------------------|------------------------------------------|
-| **后端 → 浏览器**（推实时数据）       | `IbmcpWsController`（Drogon 服务端 WS） | **FastAPI 的 `/ws/collect`**，与扩展无关 |
+| **后端 → 浏览器**（推实时数据）       | `IbmcpWsController`（Drogon 服务端 WS） | **FastAPI 的 `/api/v1/ws/collect`**，与扩展无关 |
 | **后端 → 设备**（采集设备推送的数据） | `WebSocketDriver`（Drogon 客户端）      | **扩展内的 `web_socket` 驱动**           |
 
 > 02.02 号前端文档里"四固定主题"指的是**上表第一条**，和采集扩展毫无关系。开发时若把两件事混为一谈，必然导致"要给扩展加 WS
@@ -552,67 +559,81 @@ pkg-config --modversion mosquitto        ❌ NOT FOUND
 - 1.4 提供 `open62541Config.cmake`，**不必源码编译**（旧文档"建议源码编译"的结论应更正）；
 - `UA_Client_connect` 返回值、`UA_Client_getState` 等有变化，**写驱动必须对照 1.4 头文件**，不要照抄网上 1.0 示例。
 
-### 7.3 CMakeLists 骨架（扩展模块）
+### 7.3 CMakeLists 骨架（扩展模块，**已按仓库实测对齐**）
 
 ```cmake
 cmake_minimum_required(VERSION 3.20)
-project(industrial_collector_core CXX)
+project(ibmcp_collector LANGUAGES CXX)     # 实测工程名
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)                 # 实测用 17，非 20（std::thread 足够；用 std::jthread 才需 20）
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)   # 扩展模块必需
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-option(IBMCP_ENABLE_MODBUS "Enable Modbus" OFF)
-option(IBMCP_ENABLE_MQTT   "Enable MQTT"   OFF)
-option(IBMCP_ENABLE_OPCUA  "Enable OPC UA" OFF)
+find_package(pybind11 CONFIG REQUIRED)
 
-pybind11_add_module(_core MODULE
-    src/bindings/module.cpp   # 唯一的 pybind11 导出点
+# 协议库用 pkg-config 探测：找到才启用，缺库降级为 OFF，不中断构建
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(MODBUS QUIET libmodbus)
+    pkg_check_modules(MOSQUITTO QUIET libmosquitto)
+    pkg_check_modules(OPEN62541 QUIET open62541)
+endif()
+
+# 文件名统一 snake_case（实测 src/drivers/driver_factory.cpp，不是 DriverFactory.cpp）
+set(COLLECTOR_SOURCES
+    src/bindings/module.cpp        # 唯一的 pybind11 导出点
+    src/collector.cpp
     src/scheduler/timewheel.cpp
     src/scheduler/io_pool.cpp
     src/store/data_store.cpp
-    src/drivers/BaseDriver.cpp
-    src/drivers/DriverFactory.cpp
-    src/drivers/ModbusDriver.cpp
-    src/drivers/ModbusCodec.cpp
-    src/drivers/MqttDriver.cpp
-    src/drivers/OpcUaDriver.cpp
-    src/drivers/SocketDriver.cpp
-    src/drivers/WebSocketDriver.cpp
     src/plan/plan_parser.cpp
     src/plan/plan_validator.cpp
     src/common/event_emitter.cpp
     src/common/logger.cpp
+    src/drivers/driver_factory.cpp
 )
 
-set_target_properties(_core PROPERTIES
-    CXX_VISIBILITY_PRESET hidden
-    VISIBILITY_INLINES_HIDDEN ON)
-target_compile_options(_core PRIVATE -Wall -Wextra)
+pybind11_add_module(_core ${COLLECTOR_SOURCES})
+target_include_directories(_core PRIVATE include)
+
+if(MODBUS_FOUND)
+    target_compile_definitions(_core PRIVATE IBMCP_HAS_MODBUS)
+    target_include_directories(_core PRIVATE ${MODBUS_INCLUDE_DIRS})
+    target_link_libraries(_core PRIVATE ${MODBUS_LIBRARIES})
+endif()
+if(MOSQUITTO_FOUND)
+    target_compile_definitions(_core PRIVATE IBMCP_HAS_MQTT)
+    target_include_directories(_core PRIVATE ${MOSQUITTO_INCLUDE_DIRS})
+    target_link_libraries(_core PRIVATE ${MOSQUITTO_LIBRARIES})
+endif()
+if(OPEN62541_FOUND)
+    target_compile_definitions(_core PRIVATE IBMCP_HAS_OPCUA)
+    target_include_directories(_core PRIVATE ${OPEN62541_INCLUDE_DIRS})
+    target_link_libraries(_core PRIVATE ${OPEN62541_LIBRARIES})
+endif()
+
+target_compile_options(_core PRIVATE -Wall -Wextra -Wno-unused-parameter)
+
+# 相对路径，靠 build.sh 的 `cmake --install --prefix python` 落到 python/industrial_collector/
+install(TARGETS _core LIBRARY DESTINATION industrial_collector)
 ```
+
+> **与 05 号 7.1 的关系**：本节是**驱动侧视角的 CMake 骨架**，05 号 7.1 是**构建链路视角**的同一份文件。两处编译参数必须
+> 逐字一致；若只改一处会得到"驱动文档说 C++20、实际编译 C++17"这类隐性偏差。**以仓库 `collector-cpp/CMakeLists.txt` 为准**。
+>
+> **`pybind11_add_module(_core ${COLLECTOR_SOURCES})` 不要写 `MODULE` 关键字**：`pybind11_add_module` 默认已生成 MODULE
+> 库，显式传 `MODULE` 是合法但易与 `SHARED` 混淆，实测文件也未写。
 
 > **`-fno-exceptions` 禁用**：pybind11 依赖异常把 C++ 错误转成 Python 异常，全局关异常会让 `py::register_exception` 与
 > `throw` 全部失效。**推荐做法**：保留异常，在每个对外函数（`module.cpp` 中的 lambda/方法）外层加
 > `try { } catch (const std::exception &e) { throw CollectorError(...); } catch (...) { throw CollectorError(...); }`
 > 。这样扩展内可用异常、边界绝不泄漏（见 05 号 4.2）。
 
-**协议探测（不中断构建，失败自动 OFF）**
-
-```cmake
-if(IBMCP_ENABLE_MODBUS)
-    find_path(MODBUS_INC modbus/modbus.h)
-    find_library(MODBUS_LIB modbus)
-    if(MODBUS_INC AND MODBUS_LIB)
-        target_include_directories(_core PRIVATE ${MODBUS_INC})
-        target_link_libraries(_core PRIVATE ${MODBUS_LIB})
-        target_compile_definitions(_core PRIVATE IBMCP_HAS_MODBUS=1)
-    else()
-        message(WARNING "MODBUS not found, fallback OFF")
-        set(IBMCP_ENABLE_MODBUS OFF)
-    endif()
-endif()
-# MQTT / OPCUA 同理
-```
+> **协议探测方式已统一**：上面 7.3 的 `pkg_check_modules(... QUIET)` + `if(MODBUS_FOUND)` 就是实测实现，
+> **不再需要**旧稿里的 `option(IBMCP_ENABLE_* OFF)` 开关 + `find_path/find_library` 手写探测。两者的行为差异：
+> `option` 默认 OFF 时驱动被静默排除（编出来的 `.so` 少了 modbus 能力却不报警）；`pkg_check_modules QUIET` 是
+> "装了就自动启用、没装就降级"，更符合"能编就带上能力"的预期。**若需人为关闭某协议**，用 `-DCMAKE_DISABLE_FIND_PACKAGE_*`
+> 或在 venv 里卸掉对应 `-devel` 包，不要再引入 `option`。
 
 源码用宏隔离：
 
@@ -635,7 +656,7 @@ wheel.packages = ["python/industrial_collector"]
 build-dir = "build/{wheel_tag}"
 ```
 
-**安装即编译**：`pip install ./backend` 在欧拉侧一次完成"C++ 编译 + wheel 打包 + 站点安装"，扩展落在
+**安装即编译**：在项目根执行 `pip install .` 在欧拉侧一次完成"C++ 编译 + wheel 打包 + 站点安装"（`pyproject.toml` 在项目根，`backend/` 下无 `pyproject.toml`，故不要用 `pip install ./backend`），扩展落在
 `site-packages/industrial_collector/_core*.so`，**不需要手工 `install()` 到 `/usr/local/lib`，也不需要
 `LD_LIBRARY_PATH`** —— 这正是 pybind11 + scikit-build-core 相对 `add_library(SHARED) + ctypes.CDLL`
 的最大工程收益（消除了"库找不到"这类部署故障的一半）。
@@ -655,7 +676,7 @@ build-dir = "build/{wheel_tag}"
 | 包                                                     | 用途                            | 缺失后果                                |
 |--------------------------------------------------------|---------------------------------|-----------------------------------------|
 | `gcc-c++`（≥ 11，需 C++20）、`cmake`（≥ 3.20）、`make` | 工具链                          | 无法构建                                |
-| `python3-devel`（≥ 3.11）                              | pybind11 编译需要 Python 头文件 | `pybind11_add_module` 找不到 `Python.h` |
+| `python3.11-devel`（仅头文件，`build.sh` 按需补装）     | pybind11 编译需要 Python 头文件 | `pybind11_add_module` 找不到 `Python.h`（**解释器用系统自带 python3.11，不单独装**） |
 | `jsoncpp-devel`                                        | plan 解析 + 事件序列化          | 编译失败                                |
 | `libmodbus-devel`                                      | Modbus TCP/RTU                  | 该协议 OFF                              |
 | `libmosquitto-devel`                                   | MQTT                            | 该协议 OFF                              |
@@ -722,33 +743,37 @@ id -nG | grep -q dialout && echo "✅ dialout" || echo "⚠ 不在 dialout 组"
 
 ## 九、开发与调试模式（Windows 编辑 + 欧拉构建）
 
-### 9.1 职责边界（旧文档 CLion Remote Host 模式的延续）
+### 9.1 职责边界（CLion Remote Host 模式）
 
 | 侧         | 做什么                                                     | 不做什么                                                    |
 |------------|------------------------------------------------------------|-------------------------------------------------------------|
 | Windows 11 | 写 C++ 源码、跑 stub 实现下的 Python 业务与 pytest、调前端 | **不编译扩展**（无 libmodbus/open62541，无 C++20 完整支持） |
-| openEuler  | `pip install ./backend` 编译 `_core`、跑真扩展、做协议联调 | 不写业务代码（编辑器在 Windows）                            |
+| openEuler  | `bash deployments/openeuler/build.sh` 编译 `_core`、跑真扩展、做协议联调 | 不写业务代码（编辑器在 Windows）                |
 
-**连接方式**（沿用旧项目验证过的模式）：
+**连接方式**：
 
-| 方式               | 适用                                               |
-|--------------------|----------------------------------------------------|
-| CLion Remote Host  | C++ 主开发，断点调试扩展（`gdbserver` + 远程调试） |
-| VS Code Remote-SSH | Python 侧调试（`debugpy` 附加）、快速查看日志      |
+| 方式                       | 适用                                               |
+|----------------------------|------------------------------------------------------|
+| CLion Remote Host          | C++ 主开发，断点调试扩展（`gdbserver :1234` 附加）  |
+| 欧拉终端（`dev-env.sh`）   | 编译、`native` 联调、查看日志（Python 调试在 Windows 本地） |
+
+> **不需要 VS Code Remote-SSH / debugpy**：Python 侧在 Windows 本地用本地解释器调试（断点零网络延迟），
+> 详见 08 号 §7.1。
 
 ### 9.2 远程构建配置（CLion 侧）
 
 ```
-Deployment: SSH → /home/<user>/01-IBMCP
+Deployment: SSH → /home/meng/ibmcp
 CMake profile: Debug (Remote)，源目录指向 collector-cpp/
   -DIBMCP_ENABLE_MODBUS=ON
   -DIBMCP_ENABLE_MQTT=ON
   -DIBMCP_ENABLE_OPCUA=ON
-Build dir:   /home/<user>/01-IBMCP/build/cmake-build-debug
+Build dir:   /home/meng/ibmcp/collector-cpp/build
 ```
 
-> **注意**：CLion 的 CMake profile 只用于**代码索引与调试**；正式构建路径统一走 `pip install ./backend`（scikit-build-core
-> 调用同一份 `CMakeLists.txt`）。两条路径共用同一个 `../../collector-cpp/CMakeLists.txt`，避免"CLion 能编、pip 编不过"的口径分裂。
+> **注意**：CLion 的 CMake profile 只用于**代码索引与调试**；正式构建路径统一走 `bash deployments/openeuler/build.sh`
+> （内部用 CMake + pybind11 编译同一份 `CMakeLists.txt`，再 `pip install .` 把 `.so` 打进 venv）。两条路径共用同一个
+> `collector-cpp/CMakeLists.txt`，避免"CLion 能编、build.sh 编不过"的口径分裂。
 
 > **源码同步方向**：**Windows → 欧拉**（CLion 的 Upload）。欧拉侧**不要反向下拉**，否则 Windows 的 `CMakeCache.txt`
 > 会被远端路径污染（旧文档 `cmake-build-debug-远程主机` 就是这个坑的产物，其 cache 里记着 `/home/meng/tmp/...`）。

@@ -1,7 +1,7 @@
 # IBMCP 接口契约与功能对照（FastAPI 版）
 
 >
-版本：v1.0　　编写日期：2026-11-18　　配套：[01-架构设计](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/FASTAPI架构/01-IBMCP-FastAPI重构架构设计.md) · [02-数据模型与字段契约](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/FASTAPI架构/02-数据模型与字段契约（FastAPI版）.md)
+版本：v1.0　　编写日期：2026-11-18　　配套：[01-架构设计](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/01-IBMCP-FastAPI重构架构设计.md) · [02-数据模型与字段契约](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/02-数据模型与字段契约（FastAPI版）.md)
 >
 > **本文档定位**：把 `开发指南/03-API接口及测试用例` 的 **118 个 REST + 1 个 WebSocket**，与 `开发指南/02.02-Vue前端` 的
 > **四大功能模块**，按 FastAPI 重构后的形态重新落位。回答三件事：
@@ -20,7 +20,7 @@
 | 维度           | 旧（历史方案 `main.cpp` 注册） | 新（FastAPI Router）                                                 |
 |----------------|--------------------------------|----------------------------------------------------------------------|
 | REST 路由数    | 118                            | **约 96**（合并字典六件套 + 拆分配置链路）                           |
-| WebSocket 端点 | 1（`/ws/push`，全局广播）      | **1**（`/ws/collect`，四固定主题 `data`/`device`/`alarm`/`control`） |
+| WebSocket 端点 | 1（`/ws/push`，全局广播）      | **1**（`/api/v1/ws/collect`，四固定主题 `data`/`device`/`alarm`/`control`） |
 | 路由注册方式   | 手写 lambda 逐个绑定           | `StaticDictRouter` 工厂批量生成                                      |
 | 鉴权           | 无强制拦截（仅具备能力）       | **Depends 强制依赖**，白名单端点除外                                 |
 | 响应包装       | `Result::ok / fail` 手动       | `response_model` 统一中间件                                          |
@@ -40,7 +40,7 @@
 | `/api/v1/alarms/*`    | 报警列表 / ack / recover              | 旧 AlarmController                                                                      |
 | `/api/v1/control/*`   | 控制下发（异步回执模型）              | 旧 DeviceController 的控制侧                                                            |
 | `/api/v1/collector/*` | 扩展探针（协议清单、健康、手动重放）  | **新增**                                                                                |
-| `/ws/collect`         | 实时数据 / 设备状态 / 报警 / 控制回执 | 旧 `/ws/push`                                                                           |
+| `/api/v1/ws/collect`  | 实时数据 / 设备状态 / 报警 / 控制回执 | 旧 `/ws/push`                                                                           |
 
 ### 1.3 兼容策略：旧路径是否保留
 
@@ -598,7 +598,7 @@ Step5 配采集项   → POST /config/devices/{device_key}/collections（须填 
 ### 5.1 连接与协议帧
 
 ```
-端点：ws://<host>/ws/collect
+端点：ws://<host>/api/v1/ws/collect        # 注意带 /api/v1 前缀（与 backend/app/api/v1/ws.py 一致）
 首帧（客户端）：{"type":"subscribe","topic":"data"}
 服务端确认：  {"type":"subscribed","topic":"data"}
 保活：        {"type":"ping"} → {"type":"pong"}

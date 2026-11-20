@@ -1,12 +1,12 @@
 # IBMCP 工业协议采集扩展 · C++ 与 Python 分层契约（pybind11 版）
 
 >
-版本：v1.0　　编写日期：2026-11-18　　配套：[01-架构设计](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/FASTAPI架构/01-IBMCP-FastAPI重构架构设计.md) · [02-数据模型](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/FASTAPI架构/02-数据模型与字段契约（FastAPI版）.md) · [03-接口契约](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/FASTAPI架构/03-接口契约与功能对照（FastAPI版）.md) · [04-驱动契约](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/FASTAPI架构/04-采集扩展驱动与协议契约（FastAPI版）.md)
+版本：v1.0　　编写日期：2026-11-18　　配套：[01-架构设计](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/01-IBMCP-FastAPI重构架构设计.md) · [02-数据模型](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/02-数据模型与字段契约（FastAPI版）.md) · [03-接口契约](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/03-接口契约与功能对照（FastAPI版）.md) · [04-驱动契约](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/04-采集扩展驱动与协议契约（FastAPI版）.md)
 >
 > **本文档定位**：把"**C++ 协议层**"与"**Python 应用层**"的**关系**定义清楚 —— 谁拥有什么、谁调用谁、数据怎么流、错误怎么传、线程谁管、生命周期谁负责。
 > 你给出的示例代码是**一个好的起点骨架**，但其中 12 处设计会导致**生产环境必然出问题**（数据竞争、GIL
 > 死锁、无法批量下发、无法多设备、异常穿透、构建不可复现等）。本文档逐条指出问题并给出可直接落地的修正版，同时补齐
-> `../../pyproject.toml` + 一键 pip 安装链路。
+> `build.sh` 两段式构建（CMake 编 `.so` + setuptools 打包）链路。
 >
 > **与 04 号文档的关系**：04 号描述 **驱动侧契约**（协议能力、连接参数、地址语义、线程所有权、快照模型）；本文档描述
 > **绑定侧契约**（`Collector` 类的方法签名、GIL 与异常边界、stub 实现、构建安装）。两者**互补不重叠**，共同构成
@@ -29,7 +29,7 @@
 | 构建产物             | `.so`（Python 扩展模块，**版本绑定**：3.11 编的不能给 3.12 用）          | `.so`（纯 C 共享库，**跨 Python 版本通用**）                                               |
 | 热替换               | ⚠ 极难（模块已 loaded）                                                 | ⚠ 也难                                                                                    |
 | 调试                 | **好**（异常有 Python 栈 + C++ 栈）                                      | 差（段错误无栈）                                                                           |
-| 部署复杂度           | `pip install ./backend` 一键（scikit-build-core 编译 + 安装到位）        | 需手工放 `.so` + `LD_LIBRARY_PATH`                                                         |
+| 部署复杂度           | `bash build.sh` 两段式（CMake 编 `.so` + `pip install` 打包，见第七章）    | 需手工放 `.so` + `LD_LIBRARY_PATH`                                                         |
 | fork 安全            | 同样有坑（GIL 状态随 fork 复制）                                         | 同样有坑                                                                                   |
 
 **结论（已定，不再讨论）**：采用 **pybind11 扩展形态**。理由：本项目 C++ 侧只做协议采集（4 个驱动 + 调度器），Python 侧承载全部业务与编排，
@@ -96,7 +96,7 @@
 | `publish` 每次阻塞等 ack                               | ⚠ **改**       | 高频下每次等 ack 会串行化；改异步 + 队列                                                                                           |
 | `bindings.cpp` 直接导出驱动类                          | ⚠ **改**       | 导出驱动 = B4 违约；只导出 `Collector` + 数据类                                                                                    |
 | 无异常处理                                             | ❌ **必须改**   | pybind11 会把 C++ 异常转成 Python 异常，但**在 C++ 线程里抛出的异常无法被 Python 捕获** → `std::terminate`                         |
-| `find_package(pybind11)` + 手写 `.so` 拷贝             | ⚠ **改**       | 不可复现；需 `scikit-build-core` 一键安装（见第七章）                                                                              |
+| `find_package(pybind11)` + 手写 `.so` 拷贝             | ⚠ **改**       | 不可复现；需 `build.sh` 用 `cmake --install --prefix python` 落到固定位置（见第七章）                                               |
 | CMake `CXX_STANDARD 17`                                | ✅ 保留（够用） | 04 号文档建议 20 是因为用了 `std::jthread`，用 `std::thread` 则 17 足够                                                            |
 | `ModbusCodec` 地址解析                                 | ✅ **必须保留** | 你的骨架缺失，`addr=0` 只能读保持寄存器 0 偏移。真实场景需 `40001/30001/0xxxx/1xxxx` 语义（04 号 4.4）                             |
 
@@ -721,101 +721,133 @@ py::tuple snapshot_since(uint64_t since_seq) {
 
 ---
 
-## 七、构建与安装（`../../pyproject.toml` 一键）
+## 七、构建与安装（项目根 `pyproject.toml` + `build.sh`）
 
-### 7.1 你要的两件事：`../../pyproject.toml` + `scikit-build-core`
+### 7.1 实际构建方案：`setuptools` + CMake 两段式
 
-```toml
-# pyproject.toml（放在 backend/ 根，C++ 源码在 backend/collector-cpp/）
-[build-system]
-requires = ["scikit-build-core>=0.10", "pybind11>=2.12"]
-build-backend = "scikit_build_core.build"
+> ⚠️ **本章已按实测代码校正（2026-11-20）**。此前版本假设用 `scikit-build-core` 一次 `pip install` 完成"编译 + 打包"，
+> **与仓库实际实现不符**：真实方案是 **`build.sh` 先 CMake 编译并把 `.so` 装进源码目录，再 `pip install .`（setuptools）打包**。
+> 两者都能得到可用结果，但**不要混用口径**——按本方案操作才能复现仓库现状。
 
-[project]
-name = "industrial-collector"
-version = "0.1.0"
-description = "IBMCP 工业协议采集扩展（Modbus/OPC UA/MQTT/Socket）"
-requires-python = ">=3.11"
-dependencies = []
+**真实两段式流程（`deployments/openeuler/build.sh`）**
 
-[tool.scikit-build]
-cmake.version = ">=3.20"
-cmake.source-dir = "collector-cpp"
-build-dir = "build/{wheel_tag}"
-# 关键：纯 Python 包装目录必须装进 wheel（否则 pip 装完 import 报错）
-wheel.packages = ["python/industrial_collector"]
+```bash
+# 第 1 段：CMake + pybind11 编译，install 到源码目录
+cmake -S collector-cpp -B collector-cpp/build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -Dpybind11_DIR="$(python -c 'import pybind11; print(pybind11.get_cmake_dir())')" \
+    -DPython_EXECUTABLE="$VIRTUAL_ENV/bin/python"
+cmake --build collector-cpp/build -j"$(nproc)"
+cmake --install collector-cpp/build --prefix python     # → python/industrial_collector/_core.so
 
-[tool.scikit-build.cmake.define]
-# 可选：覆盖环境变量 SKBUILD_CMAKE_DEFINE="IBMCP_ENABLE_MODBUS=OFF"
-IBMCP_ENABLE_MODBUS = "ON"
-IBMCP_ENABLE_OPCUA  = "ON"
-IBMCP_ENABLE_MQTT   = "ON"
+# 第 2 段：setuptools 打包安装（package-data 把 .so 一起带上）
+pip install .
 ```
 
-> **`wheel.packages` 只有一个正确答案**：`["python/industrial_collector"]`。本文档此前 7.1 写 `[]`、7.2 写带值的版本，自相矛盾；
-> **写 `[]` 的后果是 `__init__.py` 不进 wheel，`import industrial_collector` 必然 `ModuleNotFoundError`**，而 `.so` 装进了
-> `industrial_collector/` 目录却没有 `__init__.py`，报错信息会极具误导性。
+**`pyproject.toml`（项目根，实测内容）**
 
 ```toml
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ibmcp"                 # 注意：不是 industrial-collector
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+where = ["backend", "python"]  # backend/app 与 python/industrial_collector 一起被收进来
+
+[tool.setuptools.package-data]
+industrial_collector = ["*.so", "*.pyd", "py.typed"]
+```
+
+> **`package-data` 是"pip 装完 import 报错"的第一号原因**。没有它，`pip install .` 只带走 `__init__.py` 等 `.py` 文件，
+> `_core.so` 留在构建产物目录里不进 venv，`import industrial_collector._core` 必然 `ModuleNotFoundError`。
+>
+> **`--prefix python` 与 `install(TARGETS _core LIBRARY DESTINATION industrial_collector)` 必须配对**：CMakeLists.txt 里的
+> `DESTINATION industrial_collector` 是相对路径，靠 `--prefix python` 才落到 `python/industrial_collector/_core.so`。
+> 若改成 `--prefix .` 会装到项目根的 `industrial_collector/`，`packages.find` 找不到它。
+>
+> **为什么不是 scikit-build-core**：`scikit-build-core` 也能做到同样效果，但需要把 `cmake.source-dir`、`wheel.packages`
+> 在 `pyproject.toml` 里再写一套，与 `build.sh` 的 CMake 参数形成两份真源。当前选择"CMake 显式两段 + setuptools 打包"，
+> 好处是 `build.sh` 里的编译参数（`pybind11_DIR`/`Python_EXECUTABLE`）可读可调，坏处是必须按顺序跑两段。
+
+```cmake
 # collector-cpp/CMakeLists.txt 关键片段
 cmake_minimum_required(VERSION 3.20)
-project(collector_cpp LANGUAGES CXX)
-set(CMAKE_CXX_STANDARD 17)                 # 用 std::thread 即可；若改用 std::jthread 升 20
+project(ibmcp_collector LANGUAGES CXX)     # 实测工程名是 ibmcp_collector
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-set(CMAKE_CXX_VISIBILITY_PRESET hidden)    # 扩展只暴露 PYBIND11_MODULE 符号
-
-option(IBMCP_ENABLE_MODBUS "Enable Modbus" OFF)
-option(IBMCP_ENABLE_OPCUA  "Enable OPC UA" OFF)
-option(IBMCP_ENABLE_MQTT   "Enable MQTT"   OFF)
 
 find_package(pybind11 CONFIG REQUIRED)
 
-# 扩展模块名必须是 _core（与 Python 侧 from industrial_collector import _core 对应）
-# 源码清单与 04 号 8.1 的目录结构逐项对齐，不要自创文件名
-pybind11_add_module(_core
+# 协议库用 pkg-config 探测，找到才编（缺库时降级，而不是构建失败）
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(MODBUS QUIET libmodbus)
+    pkg_check_modules(MOSQUITTO QUIET libmosquitto)
+    pkg_check_modules(OPEN62541 QUIET open62541)
+endif()
+
+# 目录名与文件名遵循 snake_case（实测 src/drivers/driver_factory.cpp）
+set(COLLECTOR_SOURCES
     src/bindings/module.cpp          # 唯一 pybind11 导出点
     src/collector.cpp
-    src/store/data_store.cpp
     src/scheduler/timewheel.cpp
     src/scheduler/io_pool.cpp
-    src/drivers/BaseDriver.cpp
-    src/drivers/DriverFactory.cpp
-    src/drivers/ModbusDriver.cpp
-    src/drivers/ModbusCodec.cpp
-    src/drivers/OpcUaDriver.cpp
-    src/drivers/MqttDriver.cpp
-    src/drivers/SocketDriver.cpp
-    src/drivers/WebSocketDriver.cpp
+    src/store/data_store.cpp
     src/plan/plan_parser.cpp
     src/plan/plan_validator.cpp
     src/common/event_emitter.cpp
     src/common/logger.cpp
+    src/drivers/driver_factory.cpp
 )
+
+pybind11_add_module(_core ${COLLECTOR_SOURCES})
 target_include_directories(_core PRIVATE include)
 
-# 协议探测失败不中断构建（同 04 号 7.3）
-if(IBMCP_ENABLE_MODBUS)
-  find_path(MODBUS_INC modbus/modbus.h)
-  find_library(MODBUS_LIB modbus)
-  if(MODBUS_INC AND MODBUS_LIB)
-    target_include_directories(_core PRIVATE ${MODBUS_INC})
-    target_link_libraries(_core PRIVATE ${MODBUS_LIB})
-    target_compile_definitions(_core PRIVATE IBMCP_HAS_MODBUS=1)
-  else()
-    message(WARNING "modbus not found → OFF")
-  endif()
+# 协议库探测成功才启用（缺库降级为 OFF，不中断构建 —— 与实测 CMakeLists.txt 一致）
+if(MODBUS_FOUND)
+    target_compile_definitions(_core PRIVATE IBMCP_HAS_MODBUS)
+    target_include_directories(_core PRIVATE ${MODBUS_INCLUDE_DIRS})
+    target_link_libraries(_core PRIVATE ${MODBUS_LIBRARIES})
 endif()
-# OPCUA（find_package(open62541 CONFIG)）/ MQTT（mosquitto）同理
+if(MOSQUITTO_FOUND)
+    target_compile_definitions(_core PRIVATE IBMCP_HAS_MQTT)
+    target_include_directories(_core PRIVATE ${MOSQUITTO_INCLUDE_DIRS})
+    target_link_libraries(_core PRIVATE ${MOSQUITTO_LIBRARIES})
+endif()
+if(OPEN62541_FOUND)
+    target_compile_definitions(_core PRIVATE IBMCP_HAS_OPCUA)
+    target_include_directories(_core PRIVATE ${OPEN62541_INCLUDE_DIRS})
+    target_link_libraries(_core PRIVATE ${OPEN62541_LIBRARIES})
+endif()
 
+target_compile_options(_core PRIVATE -Wall -Wextra -Wno-unused-parameter)
+
+# 相对路径 DESTINATION，靠 build.sh 的 `--prefix python` 落到 python/industrial_collector/
 install(TARGETS _core LIBRARY DESTINATION industrial_collector)
 ```
 
 ```bash
-# 一键安装（openEuler 侧）
-pip install ./backend          # 内部触发 CMake 编译，产出 wheel
-# 或直接产出 wheel 分发
-pip wheel ./backend -w dist
+# 完整构建（openEuler 侧）—— 两段式，等价于 build.sh 的内容
+bash deployments/openeuler/build.sh
+
+# 手工等价操作（排查时用）：先编译装 .so，再打包
+cmake --build collector-cpp/build -j"$(nproc)"
+cmake --install collector-cpp/build --prefix python     # → python/industrial_collector/_core.so
+pip install .                                          # setuptools 打包，package-data 带上 .so
+
+# 产出 wheel 分发（需先完成上面 CMake install 段，否则 wheel 里没有 .so）
+pip wheel . -w dist --no-deps
 ```
+
+> ⚠️ **不要运行 `pip install ./backend`**：`backend/` 下没有 `pyproject.toml`，`pyproject.toml` 在项目根。
+> 且在 setuptools 方案下 `pip install` **不会**触发 CMake 编译，`.so` 必须先由 `build.sh` 产出——这是与
+> `scikit-build-core` 方案最关键的行为差异。
 
 ### 7.2 包目录布局（`industrial_collector` 必须在 site-packages 里）
 
@@ -845,15 +877,16 @@ __all__ = [
 > **异常类必须一起导出**：只导出方法而不导出异常类，Python 侧只能 `except Exception` 兜底，`to_api_error()` 拿不到 `rc`/
 > `stage`，4001~4006 全部退化成 500。**这条写进验收清单**。
 
-> `wheel.packages = ["python/industrial_collector"]` 已在 7.1 写入配置。**这是"pip 装完 import 报错"的第一号原因**：`.so`
-> 由 `install(TARGETS _core ...)` 装进包目录，但 `__init__.py` 只能靠 `wheel.packages` 携带，漏了就只有 `.so` 没有包。
+> `[tool.setuptools.package-data]` 里必须含 `industrial_collector = ["*.so", ...]`，已在 7.1 写入配置。**这是"pip 装完
+> import 报错"的第一号原因**：`.so` 由 `install(TARGETS _core ...)` 装进包目录，但 setuptools 默认只打包 `.py`，
+> 漏了 `package-data` 就只有包没有 `.so`，报错信息会极具误导性。
 
 ### 7.3 Windows 侧怎么用
 
 | 侧                     | 做法                                                                       |
 |------------------------|----------------------------------------------------------------------------|
 | Windows（开发）        | **不编译扩展**。`settings.collector_backend = "stub"`，全部业务逻辑跑 stub |
-| openEuler（构建/运行） | `pip install ./backend`（用 `.so`）                                        |
+| openEuler（构建/运行） | `bash deployments/openeuler/build.sh`（产出并安装含 `.so` 的包）          |
 
 > pytest 里用 `pytest.importorskip("industrial_collector")` 或直接走 stub，**不要**在 Windows 上尝试编译（缺
 > libmodbus/open62541）。
@@ -1015,7 +1048,7 @@ def to_api_error(exc: BaseException) -> tuple[int, str, dict]:
 | 9  | 采样逐点回调                       | 改拉取（3.3 / 5.5）                                         | 高                           |
 | 10 | 回调非线程安全                     | `EventDispatcher` 只入队（5.4）                             | 高                           |
 | 11 | MQTT 只 publish                    | 拆 `MqttSubscriber`（采集）与 `MqttPublisher`（可留）       | 高（业务错位）               |
-| 12 | 手拷 `.so`                         | `scikit-build-core`（第七章）                               | 中                           |
+| 12 | 手拷 `.so`                         | `build.sh` 的 `cmake --install --prefix python`（第七章）   | 中                           |
 | 13 | Paho vs mosquitto 混用             | 统一 mosquitto（04 号 7.1 已实测）                          | 中                           |
 | 14 | 无 `list_protocols`                | 加能力查询（04 号第六章）                                   | 中                           |
 | 15 | 无 `apply_plan` 校验               | 复刻 `plan_validator`（03 号 6.1 T1~T3）                    | 高                           |
@@ -1026,7 +1059,7 @@ def to_api_error(exc: BaseException) -> tuple[int, str, dict]:
 
 | 阶段 | 内容                                                                  | 验证方式                                                         |
 |------|-----------------------------------------------------------------------|------------------------------------------------------------------|
-| S0   | `../../pyproject.toml` + CMake 骨架 + 空 `_core`（只导出 `health()`） | `pip install ./backend` 成功，`import industrial_collector` 通过 |
+| S0   | 项目根 `pyproject.toml` + CMake 骨架 + 空 `_core`（只导出 `health()`） | `bash build.sh` 成功，`import industrial_collector` 通过       |
 | S1   | `DataStore` + `init` / `health` / `shutdown`（无线程）                | 单测：init→health→shutdown 无泄漏                                |
 | S2   | `ModbusTcpDriver` + 时间轮 + IO 池 + `snapshot_since`                 | ModbusPal 模拟器，读 10 点 × 1s                                  |
 | S3   | `apply_plan`（含校验 + 异常码）                                       | 喂非法 plan，验证 4001/4002                                      |

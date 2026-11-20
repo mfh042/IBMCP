@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="meng@192.168.80.134:22 password" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false" showNewOnSourceInSync="false">
+  <component name="PublishConfigData" autoUpload="Always" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false" showNewOnSourceInSync="false">
     <option name="confirmBeforeUploading" value="false" />
     <serverData>
       <paths name="meng@192.168.80.134:22 password">
@@ -8,6 +8,10 @@
           <mappings>
             <mapping deploy="/" local="$PROJECT_DIR$" />
           </mappings>
+          <excludedPaths>
+            <excludedPath local="true" path="$PROJECT_DIR$/backend" />
+            <excludedPath local="true" path="$PROJECT_DIR$/docs" />
+          </excludedPaths>
         </serverdata>
       </paths>
     </serverData>

@@ -1,7 +1,7 @@
 ﻿# IBMCP 数据模型与字段契约（FastAPI 版）
 
 >
-版本：v1.0　　编写日期：2026-11-18　　目标运行环境：openEuler　　配套主文档：[01-IBMCP-FastAPI重构架构设计.md](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/FASTAPI架构/01-IBMCP-FastAPI重构架构设计.md)
+版本：v1.0　　编写日期：2026-11-18　　目标运行环境：openEuler　　配套主文档：[01-IBMCP-FastAPI重构架构设计.md](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/01-IBMCP-FastAPI重构架构设计.md)
 >
 > **本文档定位**：把分散在 `01-docs/数据字典` 与 `01-docs/开发指南` 中的**关键字段**与**关键约束**，按 FastAPI
 > 重构后的职责分工重新组织为**可直接落地建表 / 建 Schema / 建校验规则**的单一参考。

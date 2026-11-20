@@ -1,21 +1,21 @@
 ﻿# IBMCP FastAPI 重构架构设计
 
-> 版本：v1.0　　编写日期：2026-11-18　　目标运行环境：openEuler（欧拉）　　开发环境：Windows 11
+> 版本：v1.1　　编写日期：2026-11-18　　目标运行环境：openEuler（欧拉）　　开发环境：Windows 11
+>
+> **v1.1 变更（2026-11-20）**：对齐"欧拉不单独装 Python、PG/Redis/Node-RED 走 Docker、Windows 用 uv"的统一口径——① §9.2 选型表：Python 改为系统自带（不单独装），PG15/Redis/Node-RED 改为 Docker 容器，编译工具链去掉 `python3.11-devel` 常驻项（改由 `build.sh` 按需补装，仅头文件）；② §9.3 安装顺序：删除裸机 dnf 装 PG18/Redis/Python 的旧步骤，改为 Docker Compose + 系统自带 Python；③ §9.5 systemd `After` 由 `postgresql-18.service/redis.service` 改为 `docker.service/nginx.service`；④ §10.2 Windows 侧由 `py -m venv` + `pip` 改为 **uv 管理**（`uv sync`，解释器锁定 3.11.18）；⑤ 全文 `pip install ./backend` 旧口径改为项目根 `pip install .`（`pyproject.toml` 在项目根）。
 >
 > 本文档描述 IBMCP **FastAPI 业务主框架 + C++ 采集扩展（pybind11 扩展模块）**
 > 的目标架构，并给出目录结构、接口契约、数据流、并发模型、部署与远程开发方案、分期落地路线。
 >
 > 原 C++17 + Drogon 单体后端已停止维护，本文档不再保留任何 Drogon 并行灰度、回退、双跑的设计；历史方案仅作为设计决策的背景参照。
 >
-> 对照基线文档：
-> -
-> 静态配置：[01-静态数据表字段定义.md](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/数据字典/01-静态数据表字段定义.md)
-> -
-运行动态配置：[02-运行动态配置表字段定义.md](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/数据字典/02-运行动态配置表字段定义.md)
-> -
-运行期核心与系统表：[03-运行期核心与系统管理表字段定义.md](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/数据字典/03-运行期核心与系统管理表字段定义.md)
-> - 现有 Drogon
->   后端：[02.01- Cpp_Drongon_软件代码架构说明.md](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/开发指南/02.01-%20Cpp_Drongon_软件代码架构说明.md)
+> 对照基线文档（**以下为旧工程 `01-IBMCP` 的原始台账，不在本仓库 `02-IBMCP` 内，仅作设计溯源，请勿当作可访问路径**）：
+> - 静态配置：`01-IBMCP/01-docs/数据字典/01-静态数据表字段定义.md`
+> - 运行动态配置：`01-IBMCP/01-docs/数据字典/02-运行动态配置表字段定义.md`
+> - 运行期核心与系统表：`01-IBMCP/01-docs/数据字典/03-运行期核心与系统管理表字段定义.md`
+> - 现有 Drogon 后端：`01-IBMCP/01-docs/开发指南/02.01- Cpp_Drongon_软件代码架构说明.md`
+>
+> 本仓库字段口径以 [02-数据模型与字段契约](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/02-数据模型与字段契约（FastAPI版）.md) 为准。
 
 ---
 
@@ -121,7 +121,7 @@ FastAPI 获得成熟生态（Pydantic 校验、OpenAPI 文档、依赖注入、�
 **决策 D1：C++ 采集功能以「Python 扩展模块（pybind11）」交付，由 FastAPI 进程内直接调用，不设独立进程。**
 
 - **唯一形态**：`industrial_collector._core`（Linux/openEuler 上的 CPython 扩展 `.so`，由 `scikit-build-core` + `pybind11`
-  构建，`pip install ./backend` 一键安装），**同进程内直接调用**。不部署常驻采集进程、不开监听端口、不走 IPC 序列化。
+  构建，项目根 `pip install .` 一键安装），**同进程内直接调用**。不部署常驻采集进程、不开监听端口、不走 IPC 序列化。
 - **对外唯一契约**：Python 包 `industrial_collector` 导出的 8 个接口（`init` / `apply_plan` / `set_event_callback` /
   `snapshot_since` / `write_point` / `list_protocols` / `health` / `shutdown`），**传 `dict` / `list` / `tuple`，不经 JSON
   字符串**。完整分层契约见《05-pybind11绑定与C++Python分层契约》。
@@ -403,7 +403,7 @@ async def wrap_result(request, call_next): ...
 │   │   │   ├── alarms.py              # /alarms/*
 │   │   │   ├── auth.py                # /auth/*
 │   │   │   ├── collector_admin.py     # /api/v1/collector/*（状态/协议清单/健康）
-│   │   │   └── ws.py                  # /ws/collect（单端点，四固定主题）
+│   │   │   └── ws.py                  # /api/v1/ws/collect（单端点，四固定主题）
 │   │   ├── core/collector/             # 扩展访问层（ffi.py / stub.py / pump.py / protocol.py）
 │   │   │   ├── protocol.py            # CollectorApi Protocol（唯一契约定义）
 │   │   │   ├── ffi.py                 # 真实扩展薄封装（import industrial_collector）
@@ -449,11 +449,13 @@ async def wrap_result(request, call_next): ...
 │   └── docker/                        # 可选：openeuler 基础镜像构建
 │
 ├── deployments/
-│   ├── openeuler/bootstrap.sh         # 欧拉系统一键装 PG15/Redis/Nginx/运行时
-│   ├── openeuler/build.sh             # 欧拉侧 pip install -e ./backend（编译 _core）
+│   ├── openeuler/bootstrap.sh         # 欧拉系统一键装 编译链/Docker/Nginx/运行时
+│   ├── openeuler/build.sh             # 欧拉侧 CMake 编译 _core.so + pip install .
+│   ├── openeuler/dev-env.sh           # 欧拉终端环境（venv + 别名 + 提示符）
+│   ├── openeuler/docker-compose.yml   # PG15 / Redis7 / Node-RED
 │   └── dev-windows/bootstrap.ps1      # Windows 本地依赖（Python venv / lint 工具）
 │
-└── 01-docs/                           # 文档（本文件位于 FASTAPI架构/ 下）
+└── docs/                              # 文档（本文件位于 1-框架文档/ 下）
 ```
 
 ### 6.2 应用装配（`app/main.py` 要点，不含业务实现）
@@ -543,7 +545,7 @@ class Collector:
 2. **异常与追溯完整**：C++ 异常经 `py::register_exception` 转成 Python 异常，带 `file:line` 与 `what()`
    ，日志可读性远优于"返回码 + err_json"。
 3. **回调安全**：`std::function` 持有 Python 可调用对象的强引用，**从根本上消除** ctypes 回调被 GC 后野指针这个扩展形态最致命崩溃点。
-4. **构建一体化**：`../../pyproject.toml` + `pip install ./backend` 一条命令完成"编译 + 安装 + 可 import"，欧拉侧不必再做
+4. **构建一体化**：项目根 `pyproject.toml` + `pip install .` 一条命令完成"编译 + 安装 + 可 import"，欧拉侧不必再做
    `cmake --install` + `ldconfig` + 路径拼接。
 
 **代价与对冲**：扩展与 Python ABI 绑定（不能跨小版本复用）、调试需附着到 Python 进程。对冲方式见 05 号 7.3（Windows 用 stub）与
@@ -687,24 +689,34 @@ POST /api/v1/runtime/devices/{device_key}/control  { point_id, value }
 **一条命令完成编译与安装（欧拉侧）**
 
 ```bash
-pip install -e ./backend        # scikit-build-core 自动调 CMake 编译 _core 并安装
+bash deployments/openeuler/build.sh   # CMake 编译 _core.so → pip install . 装进 venv
 ```
 
-**`backend/pyproject.toml` 关键配置**（完整版见 05 号 7.1/7.2）
+> build.sh 内部流程：激活 `/home/meng/ibmcp/venv` → 装 pybind11 → `cmake -S collector-cpp -B collector-cpp/build` →
+> `cmake --build` → 回到项目根 `pip install .`（`pyproject.toml` 的 `package-data` 声明把 `_core.so` 打进包）。
+> 每次改完 `.cpp` 重跑即可（CMake 自身增量）。
+
+**`pyproject.toml` 关键配置**（完整版见 05 号 7.1/7.2）
 
 ```toml
 [build-system]
-requires = ["scikit-build-core>=0.10", "pybind11>=2.12"]
-build-backend = "scikit_build_core.build"
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
-name = "industrial-collector"
+name = "ibmcp"
+version = "0.1.0"
 requires-python = ">=3.11"
 
-[tool.scikit-build]
-cmake.source-dir = "collector-cpp"
-wheel.packages = ["python/industrial_collector"]
+[tool.setuptools.packages.find]
+where = ["backend", "python"]
+
+[tool.setuptools.package-data]
+industrial_collector = ["*.so", "*.pyd", "py.typed"]
 ```
+
+> `package-data` 这一项是 `_core.so` 能被装进 venv 的关键——缺了它，`pip install .` 只会装 `.py`，`.so` 留在构建目录，导致
+> 欧拉侧 `import industrial_collector._core` 直接 `ModuleNotFoundError`。
 
 **关键约束**
 
@@ -849,48 +861,42 @@ uvicorn 拉起 → lifespan.start
 | 组件       | 版本/包（openEuler）                                                                                                                                     | 用途                                       | 备注                                                                     |
 |------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------|--------------------------------------------------------------------------|
 | openEuler  | 24.03 LTS（推荐）                                                                                                                                        | 基础 OS                                    | 也支持 22.03 LTS                                                         |
-| Python     | 3.11+（`dnf install python3.11 python3.11-devel`）                                                                                                       | FastAPI 运行时                             | 若系统自带版本偏低，用 `pyenv` 或 `uv python install 3.11`               |
-| PostgreSQL | 18（PGDG 官方 repo）                                                                                                                                     | 业务库                                     | 见 9.3 安装顺序                                                          |
-| PostgreSQL | `postgresql-2-postgresql-18`                                                                                                                             | 时序普通表                                 | **必须与 PG15 ABI 匹配**；若不支持，则时序查询降级为分区表方案（见 9.6） |
-| Redis      | 7.x（`dnf install redis`）                                                                                                                               | 缓存 / WS 订阅状态 / 限流                  | `appendonly yes`                                                         |
+| Python     | 3.11（openEuler 24.03 **系统自带**，不单独装）                                                                                                            | FastAPI 运行时                             | 用系统自带 `python3.11` 建 venv + pip；编译扩展需 `Python.h` 时由 `build.sh` 按需补装 `python3.11-devel`（仅头文件，非装解释器） |
+| PostgreSQL | **15（Docker 容器）**                                                                                                                                   | 业务库                                     | 走 `deployments/openeuler/docker-compose.yml`，**不裸机 dnf 装**；详见 08/09 号 |
+| 时序扩展   | 可选（PG15 容器内启用分区表 / 时序扩展）                                                                                                                | 时序普通表                                 | 默认分区表方案；若启用时序扩展需与 PG15 ABI 匹配（见 9.6）                |
+| Redis      | **7（Docker 容器）**                                                                                                                                    | 缓存 / WS 订阅状态 / 限流                  | 走 `docker-compose.yml`，**不裸机 dnf 装**；`appendonly yes` 由容器配置  |
+| Node-RED   | **Docker 容器**                                                                                                                                         | 流编排 / 联动                                                                                                                               | 走 `docker-compose.yml`（:1880）                                          |
 | Nginx      | 1.24+（`dnf install nginx`）                                                                                                                             | 反代 / TLS / 静态                          | WebSocket 需 `proxy_http_version 1.1`                                    |
-| 编译工具链 | `gcc 12+`、`cmake 3.20+`、`python3.11-devel`、`libmodbus-devel`、`libmosquitto-devel`、`open62541`（源码编）、`pip`（含 `scikit-build-core`/`pybind11`） | C++ 采集扩展编译                           | 只编 Linux 产物（Python 小版本须与运行机一致）                           |
+| 编译工具链 | `gcc 12+`、`cmake 3.20+`、`make`、`libmodbus-devel`、`libmosquitto-devel`、`open62541`（源码编）、`pip`（含 `pybind11`）                                 | C++ 采集扩展编译                           | 只编 Linux 产物（Python 小版本须与运行机一致）；`python3.11-devel` 编译时按需补装（属工具链） |
 | 进程托管   | systemd                                                                                                                                                  | **单个 unit**：`ibmcp-api`（库随进程加载） | 见 9.5                                                                   |
 
 ### 9.3 安装顺序（欧拉侧）
 
+> **部署口径**：PG15 / Redis7 / Node-RED **全部走 Docker Compose**（`deployments/openeuler/docker-compose.yml`）；
+> 欧拉裸机**只装** Nginx + C++ 构建工具链，Python **用系统自带**（不单独装）。一键脚本 `deployments/openeuler/bootstrap.sh`
+> 已固化此流程（详见 08 号 §3.1、09 号）。下面仅列裸机侧的关键命令。
+
 ```bash
-# 0) 基础
-dnf install -y gcc gcc-c++ make cmake git python3.11 python3.11-devel nginx redis
+# 0) 裸机基础（不含 python/redis/pg——python 用系统自带，pg/redis 走 Docker）
+dnf install -y gcc gcc-c++ make cmake git nginx
 
-# 1) PostgreSQL 15（PGDG 官方源，非系统自带源）
-dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm
-dnf install -y postgresql18-server postgresql18-contrib
-/usr/pgsql-18/bin/postgresql-18-setup initdb
-systemctl enable --now postgresql
-# 启用扩展所需参数后重启
-sed -i "s/shared_preload_libraries =.*/shared_preload_libraries = 'postgresql'/" /var/lib/pgsql/18/data/postgresql.conf
-systemctl restart postgresql-18
+# 1) Docker + compose 插件：由 bootstrap.sh 自动安装；PG15 / Redis7 / Node-RED 三容器一键拉起
+docker compose -f deployments/openeuler/docker-compose.yml up -d
 
-# 2) PostgreSQL（与 PG15 对应版本）
-dnf install -y postgresql-2-postgresql-18
-postgresql-tune --yes
-
-# 3) Redis
-systemctl enable --now redis
-# /etc/redis/redis.conf: appendonly yes, maxmemory-policy allkeys-lru
-
-# 4) Nginx
+# 2) Nginx
 systemctl enable --now nginx
 
-# 5) 协议栈（C++ 采集扩展依赖）
+# 3) 协议栈（C++ 采集扩展依赖，可选；缺失时 CMake 自动跳过对应驱动）
 dnf install -y libmodbus-devel libmosquitto-devel
 # open62541 需源码编译（版本 1.4.x）并 make install，供 CMake find_package 使用
-# pybind11 / scikit-build-core 由 pip 在 PEP 517 隔离环境内自动安装，无需系统包
+# pybind11 由 pip 在 venv 内安装，不依赖系统 pybind11-devel
+
+# 4) Python 运行时：直接用系统自带 python3.11 建 venv（build.sh 自动完成），不单独装 Python；
+#    编译 _core.so 若缺 Python.h，build.sh 按需补装 python3.11-devel（仅头文件，属 C++ 工具链）
 ```
 
-> **注意**：欧拉各版本的系统默认源里 PostgreSQL 可能是 13/14/15，**必须使用 PGDG 官方源安装 PG15**，否则 PostgreSQL
-> 版本不匹配。若内网无外网，需提前离线下载 RPM 及其依赖。
+> **不再裸机 dnf 装 PG/Redis/Python**：PG15 与 Redis 的版本、配置、数据卷均由 `docker-compose.yml` 统一管理；
+> Python 直接用 openEuler 24.03 自带的 3.11，避免多版本并存导致 pybind11 ABI 混乱。
 
 ### 9.4 数据库初始化与演进
 
@@ -906,16 +912,16 @@ dnf install -y libmodbus-devel libmosquitto-devel
 # /etc/systemd/system/ibmcp-api.service
 [Unit]
 Description=IBMCP FastAPI + collection extension
-After=network.target postgresql-18.service redis.service
+After=network.target docker.service nginx.service
 
 [Service]
 Type=simple
-User=ibmcp
-WorkingDirectory=/opt/ibmcp
-EnvironmentFile=/opt/ibmcp/.env
+User=meng
+WorkingDirectory=/home/meng/ibmcp/backend
+EnvironmentFile=/home/meng/ibmcp/backend/.env
 # 关键：协议库（libmodbus/open62541/libmosquitto）路径写死，避免依赖用户环境变量
 Environment=LD_LIBRARY_PATH=/usr/local/lib
-ExecStart=/opt/ibmcp/.venv/bin/uvicorn app.main:app \
+ExecStart=/home/meng/ibmcp/venv/bin/uvicorn app.main:app \
   --host 127.0.0.1 --port 8000 --workers 1 --loop uvloop
 Restart=always
 RestartSec=3
@@ -929,7 +935,7 @@ WantedBy=multi-user.target
 
 > **不设独立采集服务（如 `ibmcp-collector.service`）** —— 采集扩展随 `ibmcp-api` 进程 `import` 加载，没有任何独立采集服务。
 >
-> **`--workers 1` 是刻意的**：单 unit 单进程同时承载 REST 与 `/ws/collect`，采集扩展在本进程内被 `import` 一次；多 worker
+> **`--workers 1` 是刻意的**：单 unit 单进程同时承载 REST 与 `/api/v1/ws/collect`，采集扩展在本进程内被 `import` 一次；多 worker
 > 会让每个子进程各自加载一份扩展、各自采集一份，并让 WS 广播只能触达连在同一进程上的前端。扩容手段是
 > **升单机资源或分实例部署**，不是加 worker（见 3.3 与 03 号 2.6）。
 >
@@ -937,6 +943,49 @@ WantedBy=multi-user.target
 > `gunicorn -k uvicorn.workers.UvicornWorker -w 1 app.main:app`（**不要**加 `--preload`）。
 
 ### 9.6 Nginx 配置要点
+
+> ⚠️ **以仓库 `packaging/nginx/ibmcp.conf` 为准**：当前实配是 **80 端口、无 TLS**（`listen 80; listen [::]:80;`），
+> 且 **WS 实际路径是 `/api/v1/ws/collect`**（与 03 号 WS 表一致），**不是 `/ws/collect`**。早期写 443 + `/ws/collect`
+> 的方案未落地，照抄那版会 404 / 502。
+
+```nginx
+server {
+    listen 80;                      # 实配 80，未启用 TLS；对外 HTTPS 请在前面加一层反代或后续统一上证书
+    server_name _;
+    client_max_body_size 50m;
+    root /home/meng/ibmcp/frontend-dist;   # Vue 构建产物（npm run build 输出）
+    index index.html;
+
+    location /api/v1/ws/collect {   # 注意前缀是 /api/v1/，WebSocket 必须显式升级
+        proxy_pass http://127.0.0.1:8000/api/v1/ws/collect;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 3600s;   # WS 长连接，不能沿用 60s
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+> **架构要点**：本方案**不用 `upstream` 块**，直接 `proxy_pass http://127.0.0.1:8000`，省掉 keepalive 调优；
+> 单实例部署下 upstream 只增加一层间接。多实例/故障切换时再引入 `upstream` + `keepalive 64`。
+
+<details>
+<summary>历史方案：443 + TLS（未落地，仅作后续上证书时的参考）</summary>
 
 ```nginx
 upstream ibmcp_api { server 127.0.0.1:8000; keepalive 64; }
@@ -946,7 +995,7 @@ server {
     ssl_certificate     /etc/nginx/certs/ibmcp.crt;
     ssl_certificate_key /etc/nginx/certs/ibmcp.key;
 
-    root /opt/ibmcp/web;                 # Vue 构建产物
+    root /home/meng/ibmcp/frontend-dist;
     location / { try_files $uri /index.html; }
 
     location /api/ {
@@ -958,7 +1007,8 @@ server {
         proxy_read_timeout 60s;
     }
 
-    location /ws/collect {                # WebSocket 必须显式升级（四固定主题：data/device/alarm/control）
+    location /ws/collect {                # ⚠️ 历史写法：缺 /api/v1 前缀，仅供对照；现行见上方 80 端口版
+                                          # WebSocket 必须显式升级（四固定主题：data/device/alarm/control）
         proxy_pass http://ibmcp_api;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -967,6 +1017,8 @@ server {
     }
 }
 ```
+
+</details>
 
 > **注意**：uvicorn 默认不支持多 worker 的 WebSocket 广播跨进程（每个 worker 有自己的连接表）。**WebSocket 必须走单 worker
 > 的独立进程**，或用 Redis Pub/Sub 做跨 worker 分发。推荐做法：
@@ -1009,158 +1061,184 @@ server {
 
 ## 十、Windows 11 开发 + openEuler 运行调试
 
-> 用户明确：**开发在 Windows 11，运行与调试都在欧拉系统**。这与现有"Windows 编辑 + Debian
-> 远程构建"模式一致（见 [02.01 文档 2.10 节 CLion 远程开发](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/开发指南/02.01-%20Cpp_Drongon_软件代码架构说明.md)）。
+> 架构口径：**Python 用 Windows 本地解释器开发运行，C++ 用欧拉环境编译运行，数据服务（PG/Redis/Node-RED）跑在欧拉 Docker
+> 里，最终整套交付部署到欧拉**。
 
 ### 10.1 开发模式总览
 
-| 环节             | Windows 11（开发机）                                                                                           | openEuler（目标机）                         |
-|------------------|----------------------------------------------------------------------------------------------------------------|---------------------------------------------|
-| 代码编辑         | VS Code / PyCharm（Python）+ CLion（C++）                                                                      | —                                           |
-| Python 依赖解析  | 可选本地 venv（仅用于 lint/类型检查）                                                                          | 生产 venv（实际运行）                       |
-| C++ 采集扩展编译 | **不本地编译**（协议库为 Linux 生态，libmodbus/open62541 交叉编译成本高；且 pybind11 扩展与 CPython ABI 绑定） | `pip install -e ./backend` 远程构建         |
-| 运行 / 调试      | 通过 SSH 远程                                                                                                  | `uvicorn --reload`（开发）/ systemd（生产） |
-| 数据库           | 远程连接欧拉 PG15                                                                                              | 本地实例                                    |
-| 前端             | 本地 `npm run dev` + 代理到欧拉 API                                                                            | Vue 构建产物由 Nginx 服务                   |
+| 环节             | Windows 11（开发机）                                                | openEuler（目标机）                                    |
+|------------------|---------------------------------------------------------------------|--------------------------------------------------------|
+| 代码编辑         | PyCharm（Python + 前端 + DB）+ CLion（C++，Remote Host 索引）        | —                                                      |
+| Python 解释器    | ✅ **主力**：Python 3.11 + 本地 `.venv`                             | ⚠️ 仅作 `_core.so` 的 ABI 宿主 + 生产运行时            |
+| Python 依赖      | ✅ 本地 venv 装全套                                                 | ✅ 欧拉 venv（生产 + `native` 联调）                   |
+| FastAPI 运行     | ✅ **主力**：`COLLECTOR_BACKEND=stub`，`127.0.0.1:8000`             | ✅ 仅 `native` 联调 / 部署后 `0.0.0.0:8000`            |
+| C++ 采集扩展编译 | ❌ 不编（也不可能编）                                               | ✅ **唯一产地**：`bash deployments/openeuler/build.sh`  |
+| C++ 调试         | CLion 客户端                                                        | ✅ gdbserver :1234                                     |
+| 数据库 / 缓存    | ❌ 不装，直连欧拉                                                    | ✅ Docker：PG15 :5432 / Redis7 :6379                   |
+| Node-RED         | ❌ 不装，浏览器访问                                                  | ✅ Docker :1880                                        |
+| 前端             | ✅ **主力**：本地 Vite dev（HMR）+ proxy                            | ✅ 部署期 `npm run build` → Nginx 静态                 |
+| git              | ✅ 唯一源头                                                         | ❌ 不 init                                             |
 
-**为什么 C++ 不本地编译**：libmodbus / open62541 / libmosquitto 在 Windows 下要么无官方包、要么 ABI 不同；即便勉强编出
-`.pyd`，与欧拉上的 `.so` 行为也有差异（串口 RS485、epoll），会导致"本地能跑、现场不能跑"。因此**采集扩展只产出 Linux 产物，Windows
-侧不参与 C++ 构建**。
+**为什么 C++ 不本地编译**：三条硬约束叠加——① **ABI**：pybind11 扩展必须与 import 它的 CPython 完全同版本，且 `.so` 是
+ELF 而 Windows 是 PE；② **glibc**：依赖 ELF 动态链接器与 Linux 系统调用，Windows 无法加载；③ **驱动库**：libmodbus /
+open62541 / libmosquitto 只有 Linux 版，Windows 连头文件都找不到。
 
-**这带来一个直接后果**：Windows 上无法真正 `import industrial_collector._core`。所有采集相关验证必须在欧拉侧完成（见
-10.3），Windows 侧只做 Python 业务逻辑的 lint / 单测（用 stub 桩实现替换，见 10.7）。
+**这带来一个直接后果**：Windows 上无法 `import industrial_collector._core`。因此 Windows 侧一律用 `stub` 桩实现（见
+10.7），采集相关验证全部在欧拉侧完成（见 10.3）。
 
 ### 10.2 工具链配置
 
-**① C++ 侧（CLion 远程工具链）**
+**① C++ 侧（CLion Remote Host）**
 
-1. `Settings → Build, Execution, Deployment → Toolchains → Remote Host`，SSH 指向欧拉服务器。
-2. CMake Profile 指定远程编译器（`gcc-12`/`gcc-13`）、构建目录 `/opt/ibmcp/build`、构建类型 `RelWithDebInfo`。
-3. Deployment 映射：本地 `../../collector-cpp` ↔ 远程 `/opt/ibmcp/backend/collector-cpp/`，保存自动同步。
-4. 远程调试：`gdbserver :12345 /opt/ibmcp/.venv/bin/python -m uvicorn app.main:app` + CLion/VS Code Remote Debug 配置。
+1. `Settings → Build, Execution, Deployment | Toolchains → + → Remote Host`，SSH 指向欧拉，CMake `/usr/bin/cmake`、编译器
+   `/usr/bin/g++`、调试器 `/usr/bin/gdb`。
+2. CMake Profile 用 Remote Host，构建目录 `/home/meng/ibmcp/collector-cpp/build`，类型 `RelWithDebInfo`（调试时换 `Debug`）。
+3. Deployment 映射：本地 `collector-cpp` ↔ `/home/meng/ibmcp/collector-cpp`，保存自动上传；**勾选 Never download**（防
+   CMakeCache 反向下拉污染本地索引）。
+4. 远程调试：`gdbserver :1234 --attach <uvicorn pid>`，CLion `Attach to Process → Remote Host`。
    **调试采集扩展必须附着到承载它的 Python 进程**（扩展无独立进程可 attach）。
 
-**② Python 侧（VS Code / PyCharm）**
+**② Python 侧（PyCharm 本地解释器）**
 
-- 推荐 **Remote-SSH** 直接连欧拉，在服务器上打开 `../../backend`，解释器选 `/opt/ibmcp/.venv/bin/python`。
-- 这样 **Pylance/ruff/mypy 的类型解析基于真实依赖版本**，不会出现"Windows 上装不上 psycopg 依赖导致误报警告"。
-- 调试用 `uvicorn --reload --reload-dir app` 在服务器启动，VS Code 通过 `debugpy` 附加（`--port 5678`）。
+- Windows 用 **uv** 管理本地解释器（锁定 3.11.18）：在项目根执行 `uv sync`（按 `uv.lock` 同步依赖），uv 自动生成 `.venv`；
+  **不需要也不应该**装 `industrial_collector` 的 `.so`（Windows 侧只跑 stub，C++ 扩展在欧拉侧编译）。
+- PyCharm `Add Local Interpreter → Virtualenv Existing`，指向 `.venv\Scripts\python.exe`。
+- **不要用 Remote-SSH / SSH 远程解释器**——那样断点走网络，且 Windows 上的 lint 结果会与本地运行不一致。
+- 本地运行：`cd backend && uvicorn app.main:app --reload`，断点在本地命中、零延迟。
 
 **③ 编辑器统一（`.editorconfig` + `ruff` + `black`）**
 
 - 行尾统一 `LF`（避免 CRLF 进 Linux 造成 systemd `ExecStart` 脚本报错）
 - `ruff format` 与 `ruff check` 在 pre-commit 钩子里执行（Windows 与欧拉一致）
 
-### 10.3 常用开发命令（在欧拉服务器执行）
+### 10.3 常用开发命令
 
-```bash
-# 一次性准备
-cd /opt/ibmcp
-uv venv --python 3.11 .venv
-uv pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+**Windows（日常 Python / 前端）**：
 
-# C++ 采集扩展构建 + 安装（协议栈见 9.3，scikit-build-core 自动调 CMake）
-uv pip install -e ./backend \
-      -Ccmake.define.IBMCP_ENABLE_MODBUS=ON \
-      -Ccmake.define.IBMCP_ENABLE_MQTT=ON \
-      -Ccmake.define.IBMCP_ENABLE_OPCUA=ON
+```powershell
+cd E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP
+.\.venv\Scripts\Activate.ps1
 
-# 验证扩展可被导入（应打印 abi、lib 版本与协议清单）
-.venv/bin/python -c "from industrial_collector import _core; print(_core.health())"
+cd backend
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000   # COLLECTOR_BACKEND=stub
 
-# FastAPI 开发运行（扩展随进程 import，无需额外服务）
-.venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-# 数据库迁移
-.venv/bin/alembic upgrade head
-
-# 测试（Python 业务层可用 stub 桩实现，无需真实扩展）
-.venv/bin/pytest -q backend/tests
+# 测试（stub 驱动，无需真实扩展、无需欧拉 Python）
+cd ..
+pytest -q backend\tests
 ```
 
-> **`pip install -e` 与增量编译**：改动 C++ 后需重新执行 `uv pip install -e ./backend --no-build-isolation` 才会重新编译（
-> `-e` 只对纯 Python 热生效）。**替换扩展 `.so` 必须重启 `ibmcp-api`**（见 10.6）。
+**欧拉（C++ 编译 / `native` 联调 / 部署）**：
+
+```bash
+cd /home/meng/ibmcp
+source deployments/openeuler/dev-env.sh        # venv + 别名 + 提示符标记
+
+# C++ 采集扩展构建 + 安装（CMake + pybind11，产出 _core.so 到 venv site-packages）
+ibmcp-build                                     # = bash deployments/openeuler/build.sh
+
+# 验证扩展可被导入（应打印 abi、lib 版本与协议清单）
+python -c "from industrial_collector import _core; print(_core.Collector.instance().health())"
+
+# native 联调（加载真实 .so）
+ibmcp-api-native                                # = COLLECTOR_BACKEND=native uvicorn app.main:app
+
+# 数据库迁移
+cd backend && alembic upgrade head
+```
+
+> **C++ 改动后的重编译**：`build.sh` 每次都走完整 CMake（`cmake --build` 本身增量），改完 `.cpp` 直接重跑即可；
+> `pip install -e` 对 C++ 扩展不生效，不要依赖它。**替换扩展 `.so` 必须重启承载它的进程**（见 10.6）。
 
 ### 10.4 前后端联调（Windows 视角）
 
 ```powershell
-# Windows 侧：Vue 本地开发，API 走 SSH 隧道或直连欧拉
-npm run dev -- --proxy http://<欧拉IP>:8000     # 或 vue.config/ vite server.proxy
-
-# 若欧拉仅开放内网/需 SSH 隧道，Windows 上：
-ssh -L 8000:127.0.0.1:8000 -L 5432:127.0.0.1:5432 ibmcp@<欧拉IP>
-# 之后本地 http://127.0.0.1:8000 与 PG 直连均可用
+cd frontend
+npm run dev        # Vite HMR，浏览器 http://localhost:5173
 ```
 
-**WebSocket 联调注意**：本地 Vue dev server 代理 WS 需设置 `ws: true`（Vite）或 `ws: true`（http-proxy-middleware），指向
-`/ws/collect`；否则 WS 升级请求会退回 HTTP 轮询并失败。
+`vite.config.ts` 的 proxy target 按场景二选一：
 
-### 10.5 环境变量清单（`.env`，欧拉侧）
+| 场景 | target |
+|------|--------|
+| 日常（stub 在 Windows） | `http://127.0.0.1:8000` |
+| `native` 联调（FastAPI 在欧拉） | `http://192.168.80.134:8000` |
+
+**WebSocket 联调注意**：后端 WS 路径是 `/api/v1/ws/collect`，会命中 Vite 的 `/api` proxy 规则，**因此 `/api` 规则也必须设
+`ws: true`**（`vite.config.ts` 已配置）；`/ws` 规则保留供旧版 `/ws/push` 过渡使用。任一规则缺 `ws: true`，WS 升级请求就会
+被当普通 HTTP 处理而失败。
+
+> **不需要 SSH 隧道**：欧拉在 VMware 桥接网段，Windows 可直连 `192.168.80.134` 的 5432/6379/1880/8000。隧道仅作安全加固的可选项。
+
+### 10.5 环境变量清单（两侧差异点）
+
+变量名以 `backend/.env.example` 与 `app/core/config.py` 的 `Settings` 为准，**两侧只有少数几项不同**：
+
+| 变量 | Windows（`backend/.env`） | 欧拉（部署 / systemd） | 说明 |
+|------|---------------------------|------------------------|------|
+| `PG_HOST` | `192.168.80.134` | `127.0.0.1` | Windows 无 PG，必须连欧拉 Docker |
+| `REDIS_URL` | `redis://192.168.80.134:6379/0` | `redis://127.0.0.1:6379/0` | 同上 |
+| `COLLECTOR_BACKEND` | **`stub`** | **`native`** | 核心开关；Windows 无 Linux `.so` |
+| `APP_HOST` | `127.0.0.1` | `0.0.0.0` | 部署时需对外 |
+| `APP_ENV` | `development` | `production` | 影响日志与 Docs 开关 |
+| `CORS_ORIGINS` | `http://localhost:5173` | 实际站点域名 | 走 Vite proxy 时无 CORS 问题 |
 
 ```ini
-# 基础
-IBMCP_ENV=production|development
-IBMCP_LOG_LEVEL=INFO
-IBMCP_CORS_ORIGINS=http://localhost:5173,https://ibmcp.example.com
+# 示例：Windows 本地 backend/.env
+APP_NAME=IBMCP
+APP_ENV=development
+APP_HOST=127.0.0.1
+APP_PORT=8000
+APP_SECRET_KEY=<openssl rand -hex 32 生成，勿用 change-me>
 
-# 数据库 / 缓存
-IBMCP_DB_DSN=postgresql://ibmcp_app:******@127.0.0.1:5432/device_db
-IBMCP_DB_POOL_MIN=5
-IBMCP_DB_POOL_MAX=20
-IBMCP_REDIS_URL=redis://127.0.0.1:6379/0
+PG_HOST=192.168.80.134
+PG_PORT=5432
+PG_USER=ibmcp
+PG_PASSWORD=ibmcp
+PG_DATABASE=ibmcp
+PG_POOL_MIN=5
+PG_POOL_MAX=20
 
-# 安全
-IBMCP_JWT_SECRET=******
-IBMCP_JWT_EXPIRE_SECONDS=604800
+REDIS_URL=redis://192.168.80.134:6379/0
 
-# 采集扩展（industrial_collector，进程内 import 加载）
-# 扩展已由 pip 安装进 venv site-packages；此处只需保证协议库可解析
-IBMCP_KERNEL_ABI_EXPECT=1.2
-IBMCP_KERNEL_IMPL=ffi                  # ffi = 真实扩展；stub = 桩实现（Windows/无设备）
-IBMCP_KERNEL_IO_THREADS=8
-IBMCP_FLUSH_INTERVAL_MS=200
-IBMCP_EVENT_QUEUE_MAX=4096
-# 协议库（libmodbus/open62541/libmosquitto）安装前缀
-LD_LIBRARY_PATH=/usr/local/lib
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 
-# API
-IBMCP_API_WORKERS=4
-IBMCP_PAGE_SIZE_MAX=500
+COLLECTOR_BACKEND=stub
 ```
 
-> **安全约束**：`.env` 不入库；`IBMCP_JWT_SECRET` 必须由部署脚本生成（`openssl rand -hex 32`），不得沿用现有 `Consts.h` 中的
-> `"ibmcp-change-me-in-production"`。
+> **安全约束**：`.env` 不入库；`APP_SECRET_KEY` 必须由部署脚本生成（`openssl rand -hex 32`），不得沿用示例里的
+> `change-me-in-production`。
 
 ### 10.6 从 Windows 到欧拉的交付流水
 
 ```
-Windows（编辑 / 本地 lint / 单测 mock）
-   │ git push
+Windows（编辑 + 本地 stub 运行 / lint / 单测）
+   │ git push（C++ 源码另走 CLion Deployment 自动上传）
    ▼
-欧拉 CI 或开发服务器（git pull）
-   ├─ ruff / mypy / pytest（Python，采集路径用 stub 桩实现）
-   ├─ uv pip install -e ./backend（scikit-build-core 编译 _core）+ googletest 驱动测试
+欧拉（git pull 或全量上传）
+   ├─ ruff / mypy / pytest（采集路径用 stub 桩实现）
+   ├─ bash deployments/openeuler/build.sh（CMake 编译 _core.so + pip install .）+ googletest 驱动测试
    ├─ alembic upgrade head（DB）
+   ├─ npm run build → frontend-dist（前端静态）
    └─ systemctl restart ibmcp-api        # 采集扩展随进程重载生效
    ▼
-欧拉运行环境（生产）
+欧拉运行环境（生产，systemd + Nginx + Docker）
 ```
 
-> **注意**：**替换扩展 `.so` 必须重启 `ibmcp-api`** —— 运行中的进程已把旧扩展映射进地址空间，热替换文件不会让新扩展生效（且
-> Linux 下旧 inode 仍被占用）。因此扩展升级走"停服务 → 装扩展 → 起服务"的原子窗口。
+> **注意**：**替换扩展 `.so` 必须重启 `ibmcp-api`** —— 运行中的进程已把旧扩展映射进地址空间，热替换文件不会让新扩展生效
+> （且 Linux 下旧 inode 仍被占用）。因此扩展升级走"停服务 → 装扩展 → 起服务"的原子窗口。
 
 ### 10.7 开发期 stub 桩实现（Windows 可用）
 
 为了让 Windows 上也能跑通业务流程（不依赖 `industrial_collector._core`），`app/core/collector/` 同时提供两个实现，由
 Settings 的 `collector_backend` 选择：
 
-| 实现     | 文件                                                         | 场景                          |
-|----------|--------------------------------------------------------------|-------------------------------|
-| 真实扩展 | `app/core/collector/ffi.py`（薄封装 `industrial_collector`） | 欧拉侧运行 / 调试             |
-| 桩实现   | `app/core/collector/stub.py`                                 | Windows 单测 / 前端联调无设备 |
+| 实现     | 文件                                                         | 场景                                    |
+|----------|--------------------------------------------------------------|-----------------------------------------|
+| 真实扩展 | `app/core/collector/ffi.py`（薄封装 `industrial_collector`） | **欧拉**：`native` 联调 / 生产运行      |
+| 桩实现   | `app/core/collector/stub.py`                                 | **Windows 本地开发** / CI / 无设备联调  |
 
 ```python
-# Settings 中：collector_backend = "ffi" | "stub"（环境变量 IBMCP_COLLECTOR_BACKEND）
+# Settings 中：collector_backend = "native" | "stub"（环境变量 COLLECTOR_BACKEND）
 # stub.py 实现与 05 号 5.3 完全相同的 CollectorApi 接口
 #   （init / apply_plan / set_event_callback / snapshot_since / write_point
 #     / list_protocols / health / shutdown）
@@ -1171,7 +1249,8 @@ Settings 的 `collector_backend` 选择：
 > **stub 不是"随便返回假数据"**：它必须复刻 `apply_plan` 的全部校验规则（协议白名单、`scale=0`、`address` 为空、点位重复），否则
 > Windows 上跑通的用例到欧拉会直接 `4002`。详见 05 号 5.8。
 
-**收益**：前端与业务逻辑开发完全不必等硬件与欧拉环境；契约测试（S0 阶段）可直接用 stub 驱动，后续换成真扩展时业务层零改动。
+**收益**：前端与业务逻辑开发完全不必等硬件与欧拉环境；开发期 Python 循环零网络开销（保存 → 重启 → 断点全在本机）。
+契约测试（S0 阶段）可直接用 stub 驱动，后续换成真扩展时业务层零改动。
 
 ---
 
@@ -1191,7 +1270,7 @@ Settings 的 `collector_backend` 选择：
 | `services/AlarmService`                                                                   | **→ FastAPI `alarm_engine`**                                          | 内存态判定 + 批量 upsert                        |
 | `services/ControlService`                                                                 | **→ FastAPI `control_service` + 扩展 `write_point`**                  | 台账在 Python，执行在扩展                       |
 | `services/AuthService` + `CryptoUtil`                                                     | **→ FastAPI `core/security.py`**                                      | 统一使用 argon2 哈希（无旧版兼容负担）          |
-| `controllers/WebSocketController`                                                         | **→ FastAPI `ws/hub.py`（`/ws/collect` 四主题；必要时独立 WS 进程）** | 主题保持 `data/device/alarm/control`            |
+| `controllers/WebSocketController`                                                         | **→ FastAPI `ws/hub.py`（`/api/v1/ws/collect` 四主题；必要时独立 WS 进程）** | 主题保持 `data/device/alarm/control`            |
 | `drivers/*`（7 个驱动）                                                                   | **→ collector-cpp `drivers/*`**                                       | 尽量原样迁移，去掉 `DbHelper` / WS 依赖         |
 | `common/DbHelper` / `common/Result.h`                                                     | **废弃**                                                              | 扩展不碰 DB；Result 由 Python 中间件实现        |
 | `db/01-init.sql`                                                                          | **→ 基线 + Alembic 迁移**                                             | 触发器同步链取消（见 5.3）                      |
@@ -1257,13 +1336,22 @@ FastAPI 版是唯一在跑的后端，数据库初始化时：
 
 ### 12.3 相关文档索引
 
--
-静态字段：[01-静态数据表字段定义.md](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/数据字典/01-静态数据表字段定义.md)
--
-运行动态配置：[02-运行动态配置表字段定义.md](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/数据字典/02-运行动态配置表字段定义.md)
--
-运行期核心与系统表：[03-运行期核心与系统管理表字段定义.md](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/数据字典/03-运行期核心与系统管理表字段定义.md)
-- 现有 Drogon
-  后端架构：[02.01- Cpp_Drongon_软件代码架构说明.md](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/开发指南/02.01-%20Cpp_Drongon_软件代码架构说明.md)
-- API
-  与测试用例：[03-API接口及测试用例-涵盖数据.md](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/01-IBMCP/01-docs/开发指南/03-API接口及测试用例-涵盖数据.md)
+**本仓库内（可访问）**
+
+- [02-数据模型与字段契约（FastAPI版）](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/02-数据模型与字段契约（FastAPI版）.md) —— 表结构、字段契约、写入方约束
+- [03-接口契约与功能对照（FastAPI版）](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/03-接口契约与功能对照（FastAPI版）.md) —— 123 个端点
+- [04-采集扩展驱动与协议契约（FastAPI版）](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/04-采集扩展驱动与协议契约（FastAPI版）.md) —— 驱动侧契约
+- [05-pybind11绑定与C++Python分层契约](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/05-pybind11绑定与C++Python分层契约.md) —— 绑定与构建
+- [06-一致性核对报告](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/06-一致性核对报告（文档↔代码↔数据字典↔开发指南）.md) —— 历史不一致台账
+- [07-Vue3前端架构与多端交付契约](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/07-Vue3前端架构与多端交付契约.md) —— 前端
+- [08-开发调试环境](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/08-开发调试环境（欧拉VMware服务方案）.md) —— **开发与部署架构（第十章的上位文档）**
+- [09-openEuler环境准备实操指南](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/09-openEuler环境准备实操指南.md) —— 环境落地步骤
+- [10-openEuler本地ISO源实战指南](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/10-openEuler本地ISO源实战指南.md) —— 内网源配置
+
+**旧工程 `01-IBMCP` 外部台账（不在本仓库，仅作溯源，不可直接打开）**
+
+- 静态配置：`01-IBMCP/01-docs/数据字典/01-静态数据表字段定义.md`
+- 运行动态配置：`01-IBMCP/01-docs/数据字典/02-运行动态配置表字段定义.md`
+- 运行期核心与系统表：`01-IBMCP/01-docs/数据字典/03-运行期核心与系统管理表字段定义.md`
+- 现有 Drogon 后端架构：`01-IBMCP/01-docs/开发指南/02.01- Cpp_Drongon_软件代码架构说明.md`
+- API 与测试用例：`01-IBMCP/01-docs/开发指南/03-API接口及测试用例-涵盖数据.md`

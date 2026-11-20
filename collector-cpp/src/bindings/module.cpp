@@ -87,7 +87,7 @@ PYBIND11_MODULE(_core, m) {
     py::object exc6 = py::register_exception<DeviceNotInPlan>(m, "DeviceNotInPlan", py::base<CollectorError>());
     _attach_common_attrs(exc6);
 
-    py::class_<Collector>(m, "Collector")
+    py::class_<Collector, std::unique_ptr<Collector, py::nodelete>>(m, "Collector")
         .def_static("instance", [&]() -> Collector& {
             return guarded("Collector.instance", []() -> Collector& {
                 return Collector::instance();

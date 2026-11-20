@@ -8,7 +8,7 @@
       <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
     </content>
-    <orderEntry type="jdk" jdkName="SSH (sftp://meng@192.168.80.134:22/home/meng/venv/py3116/bin/python3)" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP\.venv" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>

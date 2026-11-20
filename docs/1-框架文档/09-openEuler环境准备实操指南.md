@@ -1,31 +1,144 @@
 ﻿# IBMCP openEuler 环境准备实操指南
 
+> 版本：v4.3　　编写日期：2026-11-20　　对应方案：[08-开发调试环境（欧拉VMware服务方案）](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/08-开发调试环境（欧拉VMware服务方案）.md)
 >
-版本：v3.1　　编写日期：2026-11-20　　对应方案：[08-开发调试环境（欧拉VMware服务方案）](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/08-开发调试环境（欧拉VMware服务方案）.md)
->
-> **本文档定位**：给"第一次搭环境"的同学准备的**动手手册**，全程复制粘贴即可跑通。与 08 号架构方案（v6.1 混合模式）
+> **本文档定位**：给"第一次搭环境"的同学准备的**动手手册**，全程复制粘贴即可跑通。与 08 号架构方案（v7.1）
 > **完全对齐**，是 08 号的"操作手册版"。
 >
->
-**配套引用**：[01-架构设计](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/01-IBMCP-FastAPI重构架构设计.md) · [02-数据模型](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/02-数据模型与字段契约（FastAPI版）.md) · [05-绑定契约](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/05-pybind11绑定与C++Python分层契约.md) · [07-前端契约](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/07-Vue3前端架构与多端交付契约.md)
+> **配套引用**：[01-架构设计](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/01-IBMCP-FastAPI重构架构设计.md) · [02-数据模型](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/02-数据模型与字段契约（FastAPI版）.md) · [05-绑定契约](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/05-pybind11绑定与C++Python分层契约.md) · [07-前端契约](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/07-Vue3前端架构与多端交付契约.md)
 
 ---
 
 ## 环境架构速览（一句话版）
 
-> **PG/Redis/Node-RED 走 Docker Compose，FastAPI/C++ 扩展/Nginx 裸机跑；Windows 11 只做编辑器和浏览器。**
+> **PG/Redis/Node-RED 走 Docker Compose，FastAPI/C++ 扩展/Nginx 裸机跑；Windows 11 跑本地 Python 解释器和前端 dev server。**
 
-| 层                      | 方式                        | 包含                                                                                                            |
-|-------------------------|-----------------------------|-----------------------------------------------------------------------------------------------------------------|
-| **Docker Compose 容器** | `docker compose up -d`      | PostgreSQL 15 · Redis 7 · Node-RED                                                                              |
-| **欧拉裸机**            | dnf 安装                    | Python 3.11 + venv · gcc-c++（C++17） · cmake · libmodbus/open62541 · FastAPI (uvicorn) · Nginx 反代 + 前端静态 |
-| **Windows 11**          | SSH 远程解释器 + Deployment | PyCharm Professional（Python+前端+DB） · CLion（C+++gdb） · Chrome                                              |
+### 0.1 开发侧拓扑
+
+**与 08 号 §1.1 完全一致**（照抄同一张图，方便对照阅读，避免两份文档描述漂移）：
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Windows 11 开发主机（代码源头 + Python 解释器 + 前端 dev server）        │
+│                                                                         │
+│  E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP\                              │
+│  ├─ backend/app/          ← PyCharm 编辑 + 本地 Python 3.11 跑（stub）   │
+│  ├─ frontend/             ← PyCharm 编辑 + 本地 Vite dev（HMR）          │
+│  ├─ collector-cpp/        ← CLion 编辑（本地索引，编译在欧拉）           │
+│  ├─ python/               ← industrial_collector 包（源码）             │
+│  ├─ deployments/openeuler/ ← bootstrap.sh + build.sh + docker-compose    │
+│  ├─ .venv/                ← Windows 本地虚拟环境（⚠️ 绝不上传）          │
+│  └─ pyproject.toml                                                      │
+│                                                                         │
+│  ┌──────────────────┐  ┌──────────────┐  ┌───────────────────────────┐  │
+│  │ PyCharm Prof     │  │ CLion        │  │ Chrome / DBeaver          │  │
+│  │ (本地解释器      │  │ (Remote Host │  │ (直连 192.168.80.134)     │  │
+│  │  + 前端 + DB)    │  │  上传源码)   │  │                           │  │
+│  └────────┬─────────┘  └──────┬───────┘  └──────────────┬────────────┘  │
+│           │ TCP 5432/6379/1880│ SFTP 上传 + gdbserver 1234│ HTTP 8000     │
+│           │ (直连，无需隧道)  │                          │               │
+│           ▼                   ▼                          ▼               │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ VMware 虚拟交换机（桥接模式）
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  openEuler 24.03 LTS 虚拟机（IP: 192.168.80.134，桥接到 Windows 网段）   │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │ Docker Compose 层（数据服务，docker compose up -d）              │    │
+│  │  ├─ ibmcp-postgres (PG15)   :5432  ibmcp/ibmcp/ibmcp             │    │
+│  │  │   └─ 卷 ibmcp_pg_data → /var/lib/postgresql/data             │    │
+│  │  ├─ ibmcp-redis (Redis 7)   :6379  appendonly AOF                │    │
+│  │  │   └─ 卷 ibmcp_redis_data → /data                              │    │
+│  │  └─ ibmcp-nodered (Node-RED) :1880  PLC 模拟器/协议探针           │    │
+│  │      └─ 卷 ibmcp_nodered_data → /data                            │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │ C++ 编译/运行层（开发期）                                        │    │
+│  │  ├─ gcc-c++ / cmake（C++17）                                     │    │
+│  │  ├─ libmodbus-devel / open62541-devel / mosquitto-devel          │    │
+│  │  ├─ /home/meng/ibmcp/collector-cpp/  ← CLion SFTP 上传的源码      │    │
+│  │  ├─ collector-cpp/build/             ← CMake 构建目录            │    │
+│  │  ├─ venv/                            ← Python 3.11（.so 的 ABI 宿主）│
+│  │  │   └─ site-packages/industrial_collector/_core.so  ← 编译产出   │    │
+│  │  ├─ gdbserver :1234                  ← CLion 远程调试（唯一调试服务）│
+│  │  └─ venv/bin/uvicorn (native)         ← native 联调实例 :8000        │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │ 部署运行层（交付后，systemd + nginx）                            │    │
+│  │  ├─ ibmcp-api.service → venv/bin/uvicorn app.main:app :8000      │    │
+│  │  ├─ Nginx :80 → 反代 FastAPI + 托管 /home/meng/ibmcp/frontend-dist│    │
+│  │  └─ systemd 开机自启                                             │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │ 现场设备 / PLC（Modbus/OPC UA/MQTT/Socket）                      │    │
+│  │ 虚拟机通过桥接网络直接访问现场设备 IP                            │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+> **读图要点**：图中**五个矩形块**就是本文档要搭的全部内容，分别对应：
+> ① Docker Compose 层 → [§3.2 第 4 步](#32-执行-bootstrapsh一键完成-7-步) · ② C++ 编译层 → [§4 build.sh](#41-step-1使用-buildsh-创建-venv--编译-c-扩展) ·
+> ③ 部署运行层 → [§4.5 前端部署](#45-step-5前端在-windows-构建只把静态产物上传到欧拉-nginx) 与 [§7 checklist](#第七部分日常启动-checklist) · ④ 现场设备 → 开发期用 Node-RED 模拟 ·
+> ⑤ Windows 侧 → [§5 远程开发配置](#第五部分windows-远程开发配置)。
+
+### 0.2 分层职责表
+
+| 层                      | 方式                                  | 包含                                                                                                            |
+|-------------------------|---------------------------------------|-----------------------------------------------------------------------------------------------------------------|
+| **Docker Compose 容器** | `docker compose up -d`                | PostgreSQL 15 · Redis 7 · Node-RED                                                                              |
+| **欧拉裸机**            | dnf 安装                              | Python 3.11 + venv（`.so` ABI 宿主 + 生产运行时） · gcc-c++（C++17） · cmake · libmodbus/open62541 · Nginx       |
+| **Windows 11**          | **本地解释器** + CLion Remote Host    | PyCharm Professional（Python 本地 venv + 前端 + DB） · CLion（C++ 编辑，编译在欧拉） · Chrome                  |
 
 > **为什么 FastAPI/C++ 不也放进 Docker？** —— pybind11 扩展（`_core.so`）必须用宿主机器的 Python 编译，且要访问宿主的
 > libmodbus.so / open62541.so 和现场 PLC 网段。详见 08 号 §1.3。
 
-> **远程开发模式**：SSH 远程解释器 + Deployment 自动同步（**非** JetBrains Gateway）。代码源头在 Windows（
-> `E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP`），欧拉侧 `/home/meng/ibmcp` 是 PyCharm 自动同步的镜像副本。详见 08 号 §〇。
+> **开发期分工**：**Python 用 Windows 本地解释器跑（`COLLECTOR_BACKEND=stub`），C++ 在 Windows 编辑但编译/运行在欧拉，
+> PG/Redis/Node-RED 全在欧拉 Docker，最终整套部署到欧拉**。因此欧拉侧 `/home/meng/ibmcp` 只需要承载 **C++ 源码 + 部署
+> 脚本 + venv**，Python 源码在开发期不必上传（部署期才需要）。详见 08 号 §〇。
+
+### 0.3 开发期 / 部署期职责边界
+
+**开发期**（本文档 §2–§5 搭建的就是这段）：
+
+| 侧                   | 做什么                                                                                                                                                     | 不做什么                                                    |
+|----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------|
+| **Windows 11**       | 写 Python 源码 + **用本地 Python 3.11 跑 FastAPI（stub）** + 写 C++ 源码（CLion 本地索引） + 写前端 + 本地 Vite dev + git + **直连欧拉 PG/Redis 调试**       | 不编 `_core.so`、不装 gcc/cmake、不装 PG/Redis、不跑 native  |
+| **openEuler Docker** | 跑 PostgreSQL 15 + Redis 7 + Node-RED（`docker compose up -d`），对 Windows 暴露 5432/6379/1880                                                            | 不跑 FastAPI 开发进程                                       |
+| **openEuler 裸机**   | **编译 `_core.so`**（`bash build.sh`）+ 提供 `.so` 的 ABI 宿主 venv + `native` 模式联调 + gdbserver 附着 + 现场设备协议联调                               | 不承载日常 Python 开发（那在 Windows）                      |
+
+**部署期**（本文档 §4.5 与第七部分验收的就是这段）：
+
+| 侧                   | 做什么                                                                                                              |
+|----------------------|---------------------------------------------------------------------------------------------------------------------|
+| **openEuler 裸机**   | **承载全部生产负载**：venv + `_core.so` + uvicorn（systemd）+ Nginx + frontend-dist                                  |
+| **openEuler Docker** | PG15 + Redis 7 + Node-RED                                                                                           |
+| **Windows 11**       | 只通过浏览器访问 `http://192.168.80.134`，不参与运行                                                                |
+
+> **一句话记住边界**：开发期欧拉只当「**C++ 编译器 + 数据库服务器**」，Windows 才是「Python 开发机」；
+> 部署期欧拉才是「运行机」。这就是为什么 §3 只装工具链和数据服务，而不装 Python 业务依赖。
+
+### 0.4 连通性矩阵（照图搭完该测什么）
+
+拓扑图中每一条带标注的箭头，都对应下表一行。搭完环境逐行验证，全绿才算 §2–§5 完成：
+
+| 起点            | 终点                       | 端口 | 协议 | 验证命令（Windows PowerShell）                                    | 对应章节 |
+|-----------------|----------------------------|------|------|-------------------------------------------------------------------|----------|
+| Windows PyCharm | 欧拉 Docker PG             | 5432 | TCP  | `Test-NetConnection 192.168.80.134 -Port 5432`                    | §5.4     |
+| Windows PyCharm | 欧拉 Docker Redis          | 6379 | TCP  | `Test-NetConnection 192.168.80.134 -Port 6379`                    | §5.4     |
+| Windows Chrome  | 欧拉 Docker Node-RED       | 1880 | HTTP | `Invoke-WebRequest http://192.168.80.134:1880 -UseBasicParsing`   | §5.4     |
+| Windows Chrome  | 欧拉裸机 FastAPI（native） | 8000 | HTTP | `Invoke-WebRequest http://192.168.80.134:8000/api/v1/docs`        | §5.4     |
+| Windows CLion   | 欧拉裸机 SSH               | 22   | SSH  | `ssh meng@192.168.80.134`                                         | §3.1     |
+| Windows CLion   | 欧拉裸机 gdbserver         | 1234 | TCP  | `Test-NetConnection 192.168.80.134 -Port 1234`（调试启动后测）    | §5.2     |
+| Windows 浏览器  | 欧拉裸机 Nginx             | 80   | HTTP | `Invoke-WebRequest http://192.168.80.134 -UseBasicParsing`        | §4.5     |
+| Windows Vite    | Windows 本地 FastAPI       | 8000 | HTTP | `Invoke-WebRequest http://127.0.0.1:8000/api/v1/docs`             | §5.1     |
+
+> **注意 8000 有两个主人**：开发期是本机 FastAPI（`COLLECTOR_BACKEND=stub`），native 联调期是欧拉 FastAPI。
+> 两者不要同时占用同一 proxy target，切换时改 `VITE_API_TARGET` 并重启 Vite。完整端口表见 [§5.5](#55-端口总览)。
 
 ---
 
@@ -80,8 +193,8 @@ certutil -hashfile openEuler-24.03-LTS-x86_64-dvd.iso SHA256
 | 开始安装     | 等待 ~10 分钟                                                                                          |
 | 重启         | 完成后重启                                                                                             |
 
-> **用户规划**：root 用于首次 bootstrap（装系统包、Docker、Nginx），`meng` 用于日常 SSH / PyCharm 远程解释器 / CLion Remote
-> Host。与 08 号 §2.3 对齐。
+> **用户规划**：root 用于首次 bootstrap（装系统包、Docker、Nginx），`meng` 用于日常 SSH / CLion Remote Host / 数据服务直连。
+> 与 08 号 §2.3 对齐。
 
 ### 1.4 拿到 IP，然后永远 SSH 操作
 
@@ -299,7 +412,7 @@ type "$env:USERPROFILE\.ssh\ibmcp_euler.pub" | ssh -p 22 meng@192.168.80.134 `
 # 3) 验证（应该不再提示输入密码）
 ssh -i "$env:USERPROFILE\.ssh\ibmcp_euler" meng@192.168.80.134 "hostname"
 
-# 4) 写入 Windows SSH config（PyCharm 远程解释器 / CLion 自动识别）
+# 4) 写入 Windows SSH config（CLion Remote Host / DBeaver / 命令行自动识别）
 # 编辑 $env:USERPROFILE\.ssh\config，加入：
 # Host euler-ibmcp
 #     HostName 192.168.80.134
@@ -316,86 +429,96 @@ ssh -i "$env:USERPROFILE\.ssh\ibmcp_euler" meng@192.168.80.134 "hostname"
 
 ### 3.1 同步项目代码到欧拉（首次）
 
-在执行 bootstrap 之前，需要先把项目代码同步一次到欧拉的 `/home/meng/ibmcp`。有三种方式，**推荐方式 B**：
+> **开发期只需要同步"欧拉侧要用到的部分"**：`collector-cpp/`（C++ 源码）、`python/`（扩展的 Python 包壳）、
+> `deployments/`（bootstrap/build/compose）、`packaging/`、`pyproject.toml`。
+> **`backend/` 与 `frontend/` 在开发期不需要上传**（Python 在 Windows 本地跑、前端在 Windows Vite 跑），
+> 只有**部署期**才需要把整套代码同步上去。
+
+在执行 bootstrap 之前，先把这几部分同步一次到欧拉的 `/home/meng/ibmcp`。有两种方式：
 
 #### 方式 A：scp 直接拷贝（在 Windows PowerShell 执行）
 
-```bash
+```powershell
 # —— 在 Windows PowerShell 执行 ——
-scp -r "E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP\*" meng@192.168.80.134:/tmp/ibmcp-upload/
-# 然后在欧拉上：
-ssh meng@192.168.80.134 "sudo mkdir -p /home/meng/ibmcp && sudo cp -r /tmp/ibmcp-upload/* /home/meng/ibmcp/ && sudo chown -R meng:meng /home/meng/ibmcp"
+scp -r "E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP\collector-cpp" `
+       "E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP\python" `
+       "E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP\deployments" `
+       "E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP\packaging" `
+       meng@192.168.80.134:/home/meng/ibmcp/
+scp "E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP\pyproject.toml" meng@192.168.80.134:/home/meng/ibmcp/
 ```
 
-> 适合：还没装 PyCharm、或想快速验证。缺点：后续改代码还是要手动 scp。
+> 适合：初次导入或一次性全量刷新。缺点：后续改代码要手动重复。
 
-#### 方式 B：PyCharm Deployment 全量上传（推荐）
+#### 方式 B：CLion Deployment 自动上传（推荐，C++ 日常开发用）
 
-**前提**：PyCharm 已按 §5.1 配好 SSH 远程解释器和 Deployment（SFTP → euler-ibmcp，Root path `/home/meng/ibmcp`）。
+**前提**：CLion 已按 §5.2 配好 Remote Host Toolchain 与 Deployment（SFTP → euler-ibmcp，Root path `/home/meng/ibmcp`），
+映射 `collector-cpp/` ↔ `/home/meng/ibmcp/collector-cpp/`。
 
 **第 1 步：确保欧拉侧目录就绪**
 
 ```bash
-# 在欧拉上执行（只需一次）
-sudo mkdir -p /home/meng/ibmcp && sudo chown meng:meng /home/meng/ibmcp
+mkdir -p /home/meng/ibmcp
 ```
 
-**第 2 步：在 PyCharm 中发起全量上传**
+**第 2 步：在 CLion 中发起上传**
 
 ```
-1. 打开 Project 工具窗口（Alt+1）→ 右键项目根节点 "02-IBMCP"
+1. 打开 Project 工具窗口 → 右键项目根节点 "02-IBMCP"
 2. 右键菜单 → Deployment | Upload to → 选 "euler-ibmcp"
-   ※ 如果 euler-ibmcp 已设为默认服务器，菜单直接显示 "Upload to euler-ibmcp"，点它即可
-3. 底部弹出 File Transfer 工具窗口，实时显示传输文件列表
-4. 等待完成（1~3 分钟），File Transfer 窗口显示统计："N files uploaded"
+   ※ 若已设为默认服务器，菜单直接显示 "Upload to euler-ibmcp"
+3. 底部 File Transfer 窗口实时显示传输文件列表与统计
 ```
 
 **第 3 步：验证文件已到位**
 
 ```bash
-# 在欧拉上执行
 ls /home/meng/ibmcp/
-# 应看到：backend/  frontend/  collector-cpp/  python/  deployments/  packaging/  pyproject.toml
+# 应看到：collector-cpp/  python/  deployments/  packaging/  pyproject.toml（以及部署期才有的 backend/ frontend/）
 
-ls /home/meng/ibmcp/backend/app/main.py              # FastAPI 入口
-ls /home/meng/ibmcp/collector-cpp/CMakeLists.txt     # C++ 构建
+ls /home/meng/ibmcp/collector-cpp/CMakeLists.txt     # C++ 构建入口
 ls /home/meng/ibmcp/deployments/openeuler/bootstrap.sh
 
 # 确认排除项没传上去
 ls /home/meng/ibmcp/venv/                    # 应不存在
-ls /home/meng/ibmcp/frontend/node_modules/   # 应不存在
+ls /home/meng/ibmcp/collector-cpp/build/     # 应不存在（构建产物只在欧拉生成）
+ls /home/meng/ibmcp/frontend/node_modules/   # 应不存在（欧拉不装 Node，也不构建前端）
+ls /home/meng/ibmcp/frontend/src/            # 应不存在（前端源码不上传，只上传 dist/ 产物）
 ```
 
-**第 4 步：确认自动同步生效**
+**第 4 步：确认自动上传生效**
 
 ```
-1. PyCharm 打开 backend/app/core/config.py
-2. 加一行注释 # sync test → Ctrl+S
-3. File Transfer 工具窗口应出现一条新传输记录：config.py → euler-ibmcp
-4. 欧拉侧验证：grep "sync test" /home/meng/ibmcp/backend/app/core/config.py
-5. 能匹配 → 自动同步正常 → 删掉测试注释 → Ctrl+S
+1. CLion 打开 collector-cpp 下任意 .cpp
+2. 加一行注释 // sync test → Ctrl+S
+3. File Transfer 窗口应出现一条新传输记录
+4. 欧拉侧验证：grep -r "sync test" /home/meng/ibmcp/collector-cpp/
+5. 能匹配 → 自动上传正常 → 删掉测试注释 → Ctrl+S
 ```
 
-> **详细图文步骤和常见问题排查**：见 08 号 §5.1.3。
+> **详细图文步骤和常见问题排查**：见 08 号 §5-B。
 >
 > **排除项配置**（防止传了不该传的文件）：
-> `Ctrl+Alt+S → Build, Execution, Deployment | Deployment | Options → Excluded Paths → +`
+> `Ctrl+Alt+S → Build, Execution, Deployment | Deployment | Excluded Paths → +`
 > - `.venv/`、`venv/`（Windows venv 不传）
-> - `frontend/node_modules/`、`frontend/dist/`
+> - `frontend/` 整个目录（**开发期不上传**；部署期只用 scp 把 `frontend\dist\*` 传到
+  `/home/meng/ibmcp/frontend-dist/`，不走 Deployment 映射，源码/`node_modules/`/`dist/` 都不需要传）
 > - `__pycache__/`、`.ruff_cache/`
 > - `build/`、`ibmcp.egg-info/`
 > - `.git/`（git 操作只在 Windows 做）
+> - `backend/`（**开发期不上传**，部署期再单独 sync）
 
 #### 方式 C：git clone（如果有远程仓库）
 
 ```bash
-sudo mkdir -p /home/meng/ibmcp && sudo chown meng:meng /home/meng/ibmcp
+mkdir -p /home/meng/ibmcp
 cd /home/meng/ibmcp && git clone <你的仓库地址> .
 ```
 
-> 适合：项目已推到远程仓库。缺点：后续还是要配 PyCharm Deployment 做自动同步。
+> 适合：项目已推到远程仓库。缺点：后续还是要配 CLion Deployment 做 C++ 自动上传。
 
-> **首次同步后，后续 PyCharm Deployment 会自动保持同步**（保存即 upload），不需要重复手动操作。详见 08 号 §〇 和 §5.1.3。
+> **首次同步后，后续 C++ 改动由 CLion Deployment 自动上传**（保存即 upload）。Python/前端改动留在 Windows，不上传。
+> 详见 08 号 §〇 与 §5-C。
 
 ### 3.2 执行 bootstrap.sh（一键完成 7 步）
 
@@ -411,11 +534,11 @@ sudo bash /home/meng/ibmcp/deployments/openeuler/bootstrap.sh
 | 步骤 | 内容                                                                                                                                                                                               |
 |------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | 1/7  | 关闭 SELinux + 防火墙（已在 §2.1 做过的话会跳过）                                                                                                                                                  |
-| 2/7  | dnf 安装裸机编译工具链：gcc/g++/cmake/python3-devel/postgresql-devel/pybind11-devel/libmodbus-devel/mosquitto-devel/open62541-devel/nginx/git/wget/curl 等（**不装 postgresql/redis，走 Docker**） |
+| 2/7  | dnf 安装裸机工具链：**gcc/g++/cmake/make**（C++ 构建）+ **nginx**（前端静态 + 反代）+ git/wget/curl 等运维工具；可选装协议驱动头文件 `libmodbus`/`open62541`/`mosquitto` 的 `-devel`（缺失时 CMake 自动跳过对应驱动）。**不装** `python3.11-devel`/`postgresql-devel`（Python 用系统自带，PG 走 Docker），也不装 nodejs/npm（前端在 Windows 构建） |
 | 3/7  | 安装 Docker Engine + docker compose 插件，启动 docker 守护进程，当前用户加入 docker 组                                                                                                             |
 | 4/7  | `docker compose up -d` 启动 PG15 + Redis 7 + Node-RED 三个容器（用 `deployments/openeuler/docker-compose.yml`），等待健康检查通过                                                                  |
 | 5/7  | 部署 Nginx 配置（`packaging/nginx/ibmcp.conf` → `/etc/nginx/conf.d/ibmcp.conf`），创建前端静态目录 `/home/meng/ibmcp/frontend-dist`，启动 Nginx                                                          |
-| 6/7  | 安装 uv（Python 包管理器）                                                                                                                                                                         |
+| 6/7  | 校验系统自带 `python3.11` 可用（**不装 uv、不单独装 Python**）；venv 与依赖由 `build.sh` 用系统 python 创建，`_core.so` 编译所需 `Python.h` 由 build.sh 按需补装 `python3.11-devel`                   |
 | 7/7  | 放开 ptrace_scope（CLion gdbserver 远程调试需要）                                                                                                                                                  |
 
 > **为什么要用 bootstrap.sh 而不是手动一步步做？** 脚本是幂等的（可重复执行），且与 08 号架构方案完全对齐。手动做容易遗漏步骤或口径不一致。
@@ -467,28 +590,58 @@ cmake --version | head -1
 
 ### 4.1 Step 1：使用 build.sh 创建 venv + 编译 C++ 扩展
 
-`deployments/openeuler/build.sh` 负责创建 venv + 编译 C++ 扩展 + 安装 backend：
+`deployments/openeuler/build.sh` 负责创建 venv + 编译 C++ 扩展 + 安装 industrial_collector 与 backend：
 
 ```bash
 cd /home/meng/ibmcp
 bash deployments/openeuler/build.sh
 ```
 
-脚本内容（精简）：
+> **前置条件**：`bootstrap.sh` 已执行完（`python3.11` / `cmake` / `gcc-c++` / `python3.11-devel` 已就位）。
+> `build.sh` 内部也会再跑一次 `dnf install`，但那是幂等兜底，不是必须。
+
+脚本实际内容（节选，与仓库 `build.sh` 一致）：
 
 ```bash
+#!/usr/bin/env bash
+set -euo pipefail
+PYTHON_BIN="${PYTHON_BIN:-python3.11}"
+PIP_INDEX="${PIP_INDEX:-https://pypi.tuna.tsinghua.edu.cn/simple}"   # 国内源，避免超时
+PIP_OPTS="--index-url $PIP_INDEX --timeout 120 --retries 5"
+
 # 创建 venv
-python3.11 -m venv venv
+"$PYTHON_BIN" -m venv venv
 source venv/bin/activate
 
-# 安装 C++ 编译依赖（幂等）
-dnf install -y cmake gcc-c++ python3.11-devel || true
+# 安装 C++ 编译依赖（幂等兜底）
+dnf install -y cmake gcc-c++ "$PYTHON_BIN-devel" || true
 
-# 编译并安装 industrial_collector（含 _core.so）+ backend
-pip install ./python ./backend
+# 安装 pybind11（venv 内，供 CMake find_package(pybind11) 使用）
+pip install $PIP_OPTS --upgrade pip -q
+pip install $PIP_OPTS pybind11 -q
+
+# CMake 编译 _core.so + 安装到 python/industrial_collector/
+PYBIND11_CMAKE_DIR="$(python -c 'import pybind11; print(pybind11.get_cmake_dir())')"
+cmake -S collector-cpp -B collector-cpp/build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -Dpybind11_DIR="$PYBIND11_CMAKE_DIR" \
+    -DPython_EXECUTABLE="$VIRTUAL_ENV/bin/python" \
+    -DPYTHON_EXECUTABLE="$VIRTUAL_ENV/bin/python"
+cmake --build collector-cpp/build -j"$(nproc)"
+cmake --install collector-cpp/build --prefix python
+
+# 安装包（_core.so 由 pyproject.toml 的 package-data 一并打包）
+pip install $PIP_OPTS .
 ```
 
-> **openEuler 24.03 自带 Python 3.11**，不需要源码编译。bootstrap.sh 的 dnf 步骤已装好 `python3-devel`。
+> **两个 Python 变量都要传**：`-DPython_EXECUTABLE` 和 `-DPYTHON_EXECUTABLE` 同时指向 venv 里的 python，
+> 因为不同 CMake 模块用不同的大小写变量名。漏传会导致 `.so` 链到系统 Python 而不是 venv，import 时 ABI 报错。
+
+> **openEuler 24.03 自带 Python 3.11**（实测 `python3.11 --version` = 3.11.6），不需要源码编译。bootstrap.sh 的 dnf 步骤已装好
+> `python3.11-devel` + `cmake` + `gcc-c++`；pybind11 必须在 venv 内 `pip install`，否则 CMake 找不到 `pybind11Config.cmake`。
+
+> **`PIP_INDEX` 可覆盖**：若欧拉不能直连外网，改用本地 ISO 源或内网镜像：
+> `PIP_INDEX=http://<内网镜像>/simple bash deployments/openeuler/build.sh`
 
 ### 4.2 Step 2：C++ 编译链说明
 
@@ -528,8 +681,8 @@ echo "open62541: $(rpm -q open62541-devel 2>/dev/null || echo 'NOT FOUND')"
 cd /home/meng/ibmcp
 source venv/bin/activate
 
-# 验证 C++ 扩展直接加载
-python -c "import industrial_collector._core as c; print('✅ _core loaded'); print(c.health())"
+# 验证 C++ 扩展直接加载（health 挂在 Collector 单例上，模块级没有 health()）
+python -c "import industrial_collector._core as c; print('✅ _core loaded:', c.Collector.instance().health())"
 
 # 验证通过 NativeCollector 封装调用
 python -c "
@@ -551,10 +704,10 @@ nc.shutdown()
 >
 > | 错误                                         | 解决                                                                                  |
 > |----------------------------------------------|---------------------------------------------------------------------------------------|
-> | `pybind11 not found`                         | `dnf install -y pybind11-devel`；venv 里 `pip install pybind11`                       |
+> | `pybind11 not found`                         | venv 内 `pip install pybind11`（CMake 靠它提供 `pybind11Config.cmake`）                |
 > | `modbus.h: No such file`                     | `dnf install -y libmodbus-devel`                                                      |
 > | `open62541.h: No such file`                  | `dnf install -y open62541-devel`（需 1.4+）                                           |
-> | `Python3 not found`                          | `dnf install -y python3-devel`                                                        |
+> | `Python not found` / `Python.h: No such`     | `dnf install -y python3.11-devel`                                                     |
 > | `libopen62541.so: cannot open shared object` | `echo "/usr/local/lib" \| sudo tee /etc/ld.so.conf.d/open62541.conf && sudo ldconfig` |
 
 ### 4.4 Step 4：配置 `.env` + Alembic 迁移
@@ -570,7 +723,7 @@ cp .env.example .env
 #   PG_PASSWORD=ibmcp
 #   PG_DATABASE=ibmcp
 #   REDIS_URL=redis://127.0.0.1:6379/0
-#   COLLECTOR_BACKEND=stub  ← 开发期先用 stub，联调时改 native
+#   COLLECTOR_BACKEND=native  ← 欧拉侧必须 native（_core.so 已编译）；stub 只用于 Windows 本地
 
 source /home/meng/ibmcp/venv/bin/activate
 alembic upgrade head
@@ -587,28 +740,54 @@ PGPASSWORD=ibmcp psql -U ibmcp -h 127.0.0.1 -d ibmcp -c "\dt"
 > 迁移。建表的字段、类型、约束、索引全部以 [02-数据模型文档](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/02-数据模型与字段契约（FastAPI版）.md)
 > 为唯一权威。
 
-### 4.5 Step 5：前端构建并部署到 Nginx
+### 4.5 Step 5：前端在 Windows 构建，只把静态产物上传到欧拉 Nginx
+
+> **前端不在欧拉构建**。欧拉侧**不安装 Node.js / npm**，也不存在 `frontend/node_modules/`。
+> 构建发生在 Windows 开发机，欧拉只接收 `dist/` 里的静态文件（HTML/JS/CSS），由 Nginx 直接托管。
+
+**① Windows 侧构建**（在 PowerShell 或 PyCharm Terminal 中执行）：
+
+```powershell
+cd "E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP\frontend"
+
+npm install          # 首次或依赖变更时
+npm run build        # 产出 frontend\dist\
+
+# 校验产物存在
+dir dist\index.html
+```
+
+**② 上传静态产物到欧拉**（二选一）：
+
+```powershell
+# 方式 A：scp 直传（推荐，一次一条命令）
+scp -r -i "$env:USERPROFILE\.ssh\ibmcp_euler" `
+    "E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP\frontend\dist\*" `
+    meng@192.168.80.134:/home/meng/ibmcp/frontend-dist/
+```
+
+方式 B：用 **CLion / PyCharm Deployment** 的映射把本地 `frontend\dist\` 映射到远端 `/home/meng/ibmcp/frontend-dist/`，
+右键 `Deployment | Upload to` 即可。注意映射源是 **`dist/`**（产物目录），不是 `frontend/` 源码目录——
+否则会把 `node_modules/` 和 `src/` 一起推上去，既浪费带宽又没有必要。
+
+**③ 欧拉侧放开权限并重载 Nginx**：
 
 ```bash
-cd /home/meng/ibmcp/frontend
-
-# 安装前端依赖（首次）
-npm install
-
-# 构建（产出 dist/ 目录）
-npm run build
-
-# 部署到 Nginx 静态目录（bootstrap.sh 已创建 /home/meng/ibmcp/frontend-dist）
-cp -r dist/* /home/meng/ibmcp/frontend-dist/
+# bootstrap.sh 已创建该目录并放开了读权限；若手动同步过，再执行一次
+chmod -R o+rX /home/meng/ibmcp/frontend-dist
 
 # 重载 Nginx（无中断）
 sudo nginx -t && sudo nginx -s reload
 ```
 
+> **为什么不在欧拉装 Node.js**：构建只需要一次性产出静态文件，而 `npm install` 会拉取几百 MB 依赖并常驻
+> `node_modules/`；欧拉磁盘要留给 PG 数据卷、Docker 镜像和 C++ 编译临时文件。Windows 侧已经有 Node 环境和
+> Vite 缓存，构建速度快得多，产物又完全与平台无关（纯静态资源）。
+
 部署后的访问入口：
 
 ```
-http://192.168.80.134           → 前端（Nginx 静态）
+http://192.168.80.134           → 前端（Nginx 静态，来自 Windows 的 dist/）
 http://192.168.80.134/api/v1/*  → FastAPI（Nginx 反代）
 http://192.168.80.134:1880      → Node-RED（Docker）
 ```
@@ -645,7 +824,7 @@ curl http://192.168.80.134
 > | 错误                                              | 排查                                                                                                       |
 > |---------------------------------------------------|------------------------------------------------------------------------------------------------------------|
 > | `No module named 'app'`                           | 必须在 `backend/` 目录下跑（Working directory: `/home/meng/ibmcp/backend`）                                      |
-> | `No module named 'industrial_collector._core'`    | venv 激活了吗？`pip install ./python ./backend` 成功了吗？                                                 |
+> | `No module named 'industrial_collector._core'`    | venv 激活了吗？`bash deployments/openeuler/build.sh` 跑过吗？（扩展由 CMake 编译）                    |
 > | `RuntimeError: industrial_collector._core 未安装` | `COLLECTOR_BACKEND=native` 但没编译扩展 → 改 `COLLECTOR_BACKEND=stub` 先跑通 Python 侧                     |
 > | PG 连接报错                                       | 确认 `PG_HOST=127.0.0.1` `PG_USER=ibmcp` `PG_PASSWORD=ibmcp`（不是 `postgres/device_db`）；PG 容器在跑吗？ |
 > | `ValueError: unknown collector backend: ffi`      | `COLLECTOR_BACKEND` 只接受 `stub` 或 `native`（不是 `ffi`）                                                |
@@ -656,35 +835,44 @@ curl http://192.168.80.134
 
 > 详见 08 号 §五，这里只保留关键配置和命令。
 
-### 5.1 PyCharm Professional（SSH 远程解释器 + Deployment）
+### 5.1 PyCharm Professional（本地解释器 + 直连欧拉数据服务）
 
 ```
-# —— 配置 SSH 远程解释器（非 Gateway）——
-Ctrl+Alt+S → Python | Interpreter → Add Interpreter → On SSH
-步骤 1：选 "Existing" → 选已配好的 SSH 配置 euler-ibmcp
-        或选 "New" → Host: 192.168.80.134 / Port: 22 / Username: meng → Key pair 认证
-步骤 2：Interpreter path: /home/meng/ibmcp/venv/bin/python3.11
-步骤 3：Sync folder:
-        Local path:  E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP
-        Remote path: /home/meng/ibmcp
-步骤 4：右下角弹出同步提示 → 点 "Sync and auto-upload files"
+# —— 配置本地 Python 解释器（不是 On SSH，uv 管理，锁定 3.11.18）——
+# 在 Windows 项目根初始化（详见 08 号 §5A.1）：
+powershell -ExecutionPolicy Bypass -File deployments\dev-windows\bootstrap.ps1
+# 或手工等价命令：cd 项目根 ; uv sync
 
-# —— 配置 Deployment（自动同步）——
-Ctrl+Alt+S → Build, Execution, Deployment | Deployment → + → SFTP → "euler-ibmcp"
-Connection 标签 → SSH configuration: 选 euler-ibmcp → Root path: /home/meng/ibmcp
-Mappings 标签 → Local path: E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP
-                Deployment path: /
-选中 euler-ibmcp → 点 "Use as Default"
-Options → Upload changed files automatically to the default server: Always
-          Delete remote files when local are deleted: ✅
+Ctrl+Alt+S → Python | Interpreter → Add Interpreter → Add Local Interpreter
+步骤 1：选 "Virtualenv Environment" → "Existing"
+步骤 2：Interpreter: E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP\.venv\Scripts\python.exe
 
-# —— 数据库工具连 Docker PG/Redis ——
+# —— backend/.env（Windows 本地，直连欧拉 Docker）——
+APP_HOST=127.0.0.1
+APP_PORT=8000
+PG_HOST=192.168.80.134        # ← 关键：Windows 没有 PG
+PG_PORT=5432
+PG_USER=ibmcp
+PG_PASSWORD=ibmcp
+PG_DATABASE=ibmcp
+REDIS_URL=redis://192.168.80.134:6379/0
+COLLECTOR_BACKEND=stub        # ← 关键：Windows 加载不了 Linux .so
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+
+# —— Run Configuration（本地跑 FastAPI）——
+Run | Edit Configurations → + → Python
+Module name:  uvicorn
+Parameters:   app.main:app --reload --host 127.0.0.1 --port 8000
+Working dir:  E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP\backend
+Interpreter:  Project Default（本地 .venv）
+
+# —— 数据库工具连欧拉 Docker PG/Redis（直连，无需隧道）——
 Database 工具窗口 → + → PostgreSQL → Host: 192.168.80.134, Port: 5432, DB: ibmcp, User: ibmcp, Password: ibmcp
-Database 工具窗口 → + → Redis → Host: 192.168.80.134, Port: 6379
+Database 工具窗口 → + → Redis    → Host: 192.168.80.134, Port: 6379
 ```
 
-> **SSH 远程解释器 vs Gateway**：SSH 远程解释器在 Windows 本地建索引，只在运行/调试时连欧拉的解释器。每次保存 Deployment 自动
-> upload。详见 08 号 §5.1.1。
+> **不要配 SSH 远程解释器 / Deployment**：Python 侧全在 Windows，保存即生效，无需同步。
+> 只有 **CLion 的 C++ 部分**需要 Deployment 自动上传（见 5.2）。详见 08 号 §5-A。
 
 ### 5.2 CLion（C++ Remote Host + gdb）
 
@@ -702,12 +890,17 @@ Ctrl+Alt+S → Build, Execution, Deployment | Deployment → + → SFTP → eule
 
 Ctrl+Alt+S → Build, Execution, Deployment | CMake → + → Debug-Remote
     Toolchain: Remote Host
-    Build directory: /home/meng/ibmcp/build/cmake-build-debug
+    Build directory: /home/meng/ibmcp/collector-cpp/build
 ```
 
-### 5.3 SSH 端口转发
+> **也可以直接用命令行构建**：`bash deployments/openeuler/build.sh` 与 CLion 的 Remote CMake 等价，二选一即可。
 
-**方式 A**：PyCharm / CLion 自动转发（推荐，连接时自动建隧道）
+### 5.3 端口转发（可选）
+
+**默认不需要**：欧拉在 VMware 桥接网段，Windows 可**直连** `192.168.80.134` 的 5432/6379/1880/8000。
+隧道仅用于"欧拉只暴露 SSH 端口"或生产环境的安全加固场景。
+
+**方式 A**：CLion Remote Host 连接时自动转发（仅覆盖 gdbserver）
 
 **方式 B**：写进 `~/.ssh/config`：
 
@@ -719,36 +912,43 @@ Host euler-ibmcp
     IdentityFile ~/.ssh/ibmcp_euler
     ServerAliveInterval 30
 
-    LocalForward 5432 localhost:5432    # PG (Docker 容器)
-    LocalForward 6379 localhost:6379    # Redis (Docker 容器)
-    LocalForward 1880 localhost:1880    # Node-RED (Docker 容器)
-    LocalForward 8000 localhost:8000    # FastAPI (裸机)
-    LocalForward 5678  localhost:5678   # debugpy (裸机)
-    LocalForward 1234  localhost:1234   # gdbserver (裸机)
+    # 可选：仅在需要隧道时启用
+    LocalForward 5432 127.0.0.1:5432    # PG (Docker 容器)
+    LocalForward 6379 127.0.0.1:6379    # Redis (Docker 容器)
+    LocalForward 1880 127.0.0.1:1880    # Node-RED (Docker 容器)
+    LocalForward 8000 127.0.0.1:8000    # FastAPI（native 联调时）
+    LocalForward 1234 127.0.0.1:1234    # gdbserver
 ```
 
-### 5.4 隧道验证
+### 5.4 连通性验证
 
 ```powershell
-# Windows PowerShell
-foreach ($p in 5432, 6379, 1880, 8000, 5678, 1234) {
-    $ok = Test-NetConnection -ComputerName 127.0.0.1 -Port $p -WarningAction SilentlyContinue
-    Write-Host "Port $p : $($ok.TcpTestSucceeded)"
+# 直连欧拉（默认方式）
+foreach ($p in 22, 5432, 6379, 1880, 8000) {
+    $ok = Test-NetConnection -ComputerName 192.168.80.134 -Port $p -WarningAction SilentlyContinue
+    Write-Host "192.168.80.134:$p : $($ok.TcpTestSucceeded)"
 }
+
+# 若改用隧道，则测本机
+# foreach ($p in 5432, 6379, 1880, 8000, 1234) { Test-NetConnection 127.0.0.1 -Port $p }
 ```
 
 ### 5.5 端口总览
 
-| 端口 | 服务                  | 跑在哪                     |
-|------|-----------------------|----------------------------|
-| 22   | SSH                   | 欧拉宿主                   |
-| 5432 | PostgreSQL 15         | **Docker 容器** → 宿主映射 |
-| 6379 | Redis 7               | **Docker 容器** → 宿主映射 |
-| 1880 | Node-RED              | **Docker 容器** → 宿主映射 |
-| 8000 | FastAPI               | **欧拉裸机** venv          |
-| 80   | Nginx 反代 + 前端静态 | **欧拉裸机**               |
-| 5678 | debugpy               | **欧拉裸机**               |
-| 1234 | gdbserver             | **欧拉裸机**               |
+| 端口 | 服务                  | 跑在哪                     | 谁在用                                    |
+|------|-----------------------|----------------------------|-------------------------------------------|
+| 22   | SSH                   | 欧拉宿主                   | CLion Remote Host / 命令行                 |
+| 5173 | Vite dev server       | **Windows 本地**           | 浏览器                                    |
+| 8000 | FastAPI               | **Windows 本地（stub）**   | Vite proxy / 浏览器 / 本机 curl           |
+| 8000 | FastAPI               | **欧拉裸机 venv（native）** | 联调 / 部署后 Nginx 反代                  |
+| 5432 | PostgreSQL 15         | **Docker 容器** → 宿主映射 | Windows 本地 FastAPI + DBeaver            |
+| 6379 | Redis 7               | **Docker 容器** → 宿主映射 | Windows 本地 FastAPI                      |
+| 1880 | Node-RED              | **Docker 容器** → 宿主映射 | 浏览器                                    |
+| 80   | Nginx 反代 + 前端静态 | **欧拉裸机**               | 部署后浏览器                              |
+| 1234 | gdbserver             | **欧拉裸机**               | CLion（仅 C++ 调试）                      |
+
+> **注意 8000 端口有两个可能的主人**：开发期是 Windows 本地 FastAPI，`native` 联调期是欧拉 FastAPI。两者不要同时指向同一
+> proxy target，改完 `vite.config.ts` 必须重启 Vite。
 
 ---
 
@@ -791,12 +991,12 @@ curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/api/v1/docs 2>&1 ||
 echo ""
 echo "========== C++ 扩展 =========="
 source /home/meng/ibmcp/venv/bin/activate
-python -c "import industrial_collector._core as c; print('✅ _core loaded:', c.health())" \
+python -c "import industrial_collector._core as c; print('✅ _core loaded:', c.Collector.instance().health())" \
     2>&1 || echo "⚠️ _core 不可用（stub 模式正常）"
 
 echo ""
 echo "========== 前端 =========="
-ls /home/meng/ibmcp/frontend-dist/index.html 2>/dev/null && echo "✅ 前端已部署" || echo "⚠️ 前端未部署（npm run build + cp dist/*）"
+ls /home/meng/ibmcp/frontend-dist/index.html 2>/dev/null && echo "✅ 前端已部署" || echo "⚠️ 前端未部署（Windows 侧 npm run build 后上传 dist/*）"
 
 echo ""
 echo "========== Alembic =========="
@@ -809,7 +1009,7 @@ Windows 侧验证：
 # PowerShell 一键验证
 $urls = @(
     "http://192.168.80.134/api/v1/docs",   # FastAPI（Nginx 反代）
-    "http://192.168.80.134:8000/api/v1/docs", # FastAPI（直连）
+    "http://192.168.80.134:8000/api/v1/docs", # FastAPI（native 联调时）
     "http://192.168.80.134",               # 前端（Nginx 静态）
     "http://192.168.80.134:1880"           # Node-RED
 )
@@ -821,6 +1021,8 @@ foreach ($u in $urls) {
         Write-Host "$u → ❌ $($_.Exception.Message)"
     }
 }
+# 本地 FastAPI（stub）单独测
+Invoke-WebRequest "http://127.0.0.1:8000/api/v1/docs" -UseBasicParsing | Select-Object StatusCode
 ```
 
 ---
@@ -833,17 +1035,17 @@ foreach ($u in $urls) {
 □ VMware → 启动 openEuler 虚拟机 → 确认 IP 192.168.80.134 能 ping 通
 □ Docker 容器：cd /home/meng/ibmcp && docker compose -f deployments/openeuler/docker-compose.yml ps
     → ibmcp-postgres / ibmcp-redis / ibmcp-nodered 全部 Up
-□ 裸机服务：systemctl status nginx → active
-□ 欧拉侧 venv：source /home/meng/ibmcp/venv/bin/activate → python --version
-□ PyCharm → 打开 02-IBMCP → 确认远程解释器已连（状态栏显示 SSH: euler-ibmcp）
-□ PyCharm → 确认 Deployment 自动同步开启
-□ CLion → Open Recent → Remote Host 自动连上
-□ 隧道验证：Test-NetConnection 5432/6379/1880/8000
+□ 欧拉侧 venv（仅 C++ 编译时需要）：source /home/meng/ibmcp/deployments/openeuler/dev-env.sh → python --version
+□ Windows 本地 venv：.\.venv\Scripts\Activate.ps1 → python --version
+□ Windows 本地 FastAPI：uvicorn app.main:app --reload（COLLECTOR_BACKEND=stub）
+□ Windows 本地前端：cd frontend && npm run dev → http://localhost:5173
+□ CLion → Open Recent → Remote Host 自动连上（只在改 C++ 时需要）
+□ 连通性：Test-NetConnection 192.168.80.134 的 5432/6379/1880
 □ 浏览器：
-    http://192.168.80.134         → 前端（Nginx 静态，已部署时）
-    http://192.168.80.134/api/v1/docs → FastAPI OpenAPI（Nginx 反代）
-    http://192.168.80.134:8000/api/v1/docs → FastAPI（直连）
-    http://192.168.80.134:1880    → Node-RED（Docker）
+    http://localhost:5173            → 前端 dev（Vite HMR）
+    http://127.0.0.1:8000/api/v1/docs → 本地 FastAPI（stub）
+    http://192.168.80.134             → 前端（Nginx 静态，仅已部署时）
+    http://192.168.80.134:1880        → Node-RED（Docker）
 □ PyCharm Database → ibmcp → 表结构正常
 ```
 
@@ -891,15 +1093,15 @@ foreach ($u in $urls) {
 |------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Nginx 502 反代 FastAPI | 宿主 `curl http://127.0.0.1:8000` 测 → FastAPI 是否在跑                                                                                                  |
 | Nginx 改配置没生效     | `sudo nginx -t && sudo nginx -s reload`（不要 systemctl restart）                                                                                        |
-| WS 断开                | nginx.conf WS location 必须加 `proxy_http_version 1.1` + `proxy_set_header Upgrade $http_upgrade` + `Connection upgrade` + 足够大的 `proxy_read_timeout` |
-| 前端页面 404           | 确认 `/home/meng/ibmcp/frontend-dist/index.html` 存在（`npm run build` + `cp dist/*`）                                                                         |
+| WS 断开                | nginx.conf 的 `location /api/v1/ws/collect` 必须加 `proxy_http_version 1.1` + `proxy_set_header Upgrade $http_upgrade` + `Connection upgrade` + 足够大的 `proxy_read_timeout`；**注意路径带 `/api/v1` 前缀** |
+| 前端页面 404           | 确认 `/home/meng/ibmcp/frontend-dist/index.html` 存在（**Windows 侧** `npm run build` 后 scp 上传）                                                          |
 | 前端 SPA 刷新 404      | nginx.conf `location /` 必须有 `try_files $uri $uri/ /index.html`                                                                                        |
 
 ### Python / FastAPI
 
 | 症状                                                                 | 排查                                                                                                                           |
 |----------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------|
-| `ModuleNotFoundError: industrial_collector._core`                    | venv 激活了吗？`pip install ./python ./backend` 成功了吗？                                                                     |
+| `ModuleNotFoundError: industrial_collector._core`                    | venv 激活了吗？`bash deployments/openeuler/build.sh` 成功了吗？                                                                |
 | `RuntimeError: industrial_collector._core 未安装`                    | `COLLECTOR_BACKEND=native` 但没编译扩展 → 改 `stub` 或执行 build.sh                                                            |
 | `ImportError: dynamic module does not define module export function` | **Python ABI 不匹配**：3.11 编的扩展被 3.12 import。确认 venv 用 python3.11                                                    |
 | PG 连接报错                                                          | 确认 `PG_HOST=127.0.0.1` `PG_USER=ibmcp` `PG_PASSWORD=ibmcp` `PG_DATABASE=ibmcp`（不是 `postgres/device_db`）；PG 容器在跑吗？ |
@@ -909,10 +1111,29 @@ foreach ($u in $urls) {
 
 | 症状                                      | 排查                                                                                                       |
 |-------------------------------------------|------------------------------------------------------------------------------------------------------------|
-| `No executable code found`（CLion 断点）  | 没带 `-g` → `CMAKE_BUILD_TYPE=Debug pip install ./python ./backend --no-build-isolation`                   |
+| `No executable code found`（CLion 断点）  | 没带 `-g` → 用 `-DCMAKE_BUILD_TYPE=Debug` 重走 CMake 编译步骤（见 08 号 §7.2.3）                          |
 | `ptrace_scope` 报错（gdbserver）          | `echo 0 \| sudo tee /proc/sys/kernel/yama/ptrace_scope`（bootstrap.sh 已自动执行）                         |
 | `libmodbus.so: cannot open shared object` | `dnf install libmodbus-devel`；或 `echo "/usr/lib64" \| sudo tee /etc/ld.so.conf.d/ibmcp.conf && ldconfig` |
 | cmake 报 `CMAKE_CXX_STANDARD 17` 不支持   | gcc 版本太老 → `dnf update gcc gcc-c++`（openEuler 24.03 自带支持 C++17）                                  |
+
+### Windows 本地 FastAPI（stub 模式）
+
+| 症状                                                   | 排查                                                                                                                                       |
+|--------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------|
+| 本地 `uvicorn` 起不来，报 PG 连接超时                  | 欧拉 PG 容器在跑吗？VMware 桥接对不对？`Test-NetConnection 192.168.80.134 -Port 5432`                                                       |
+| 本地报 `ModuleNotFoundError: industrial_collector._core` | Windows 上**必须** `COLLECTOR_BACKEND=stub`——Windows 没有 Linux `.so`，这是设计如此，不是错误                                                  |
+| 本地改了代码，欧拉部署版没变                           | 正常：Python 源码开发期**不上传**。要在欧拉生效，需部署期单独同步 `backend/` 并重启欧拉 uvicorn                                             |
+| PowerShell 报"禁止运行脚本"                            | `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` 后重新激活 `.\.venv\Scripts\Activate.ps1`                                      |
+
+### 前端类
+
+| 症状                       | 排查                                                                                                                                                |
+|----------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------|
+| `/api` 请求 404            | `vite.config.ts` 的 `/api` proxy 是否指向 `API_TARGET`；`VITE_API_TARGET` 是否设对（默认 `http://127.0.0.1:8000`）                                   |
+| WebSocket 握手失败（101→失败） | **`vite.config.ts` 的 `/api` 规则必须带 `ws: true`**——WS 路径是 `/api/v1/ws/collect`，会命中 `/api` 规则；缺 `ws: true` 就被当普通 HTTP 处理          |
+| 部署到 Nginx 后页面空白    | Windows 侧 `npm run build` 成功吗？`dist\*` 传上去了吗？`frontend-dist` 权限是 `o+rX` 吗？nginx.conf `root` 路径对吗                                  |
+| 改了前端但页面没变         | 部署场景：重新 `npm run build` + scp + `nginx -s reload`。开发场景：Vite HMR 会自动热更，无需重启                                                   |
+| 装了依赖但 import 报错     | 确认 `npm install` 是在 `frontend/` 目录下跑的；Windows 的 `node_modules` 不会也不需要同步到欧拉                                                     |
 
 ### 磁盘清理
 
@@ -920,11 +1141,10 @@ foreach ($u in $urls) {
 # 每月一次：清理悬空 Docker 镜像/网络/构建缓存（保留数据卷）
 docker system prune -f
 
-# 每次 Release 编译完清 C++ 临时文件
-rm -rf /home/meng/ibmcp/build/
+# 每次 Release 编译完清 C++ 临时文件（在欧拉）
+rm -rf /home/meng/ibmcp/collector-cpp/build/
 
-# 清 PyCharm 远程缓存
-rm -rf ~/.cache/JetBrains/
+# 无需清 JetBrains 缓存：新架构下 PyCharm 全本地，欧拉侧不再有 ~/.cache/JetBrains/
 ```
 
 ---
@@ -933,8 +1153,12 @@ rm -rf ~/.cache/JetBrains/
 
 | 版本     | 日期       | 变更                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 |----------|------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **v3.1** | 2026-11-20 | **§3.1 + §5.1 全部对齐 PyCharm 2026.3 界面**：① 方式 B（PyCharm Deployment）从 2 行注释扩写为 4 步详细操作（确保目录就绪 → Project 工具窗口 Alt+1 → 右键 `Deployment | Upload to` → File Transfer 窗口监控 → 验证文件到位 → 确认自动同步）；② 方式 A（scp）补充 `chown` 和 `ssh` 远程执行命令；③ §5.1/§5.2 菜单路径全部改为 `Ctrl+Alt+S → Build, Execution, Deployment | Deployment`（2026.3 界面），SFTP 用 SSH configuration 下拉，新增 Use as Default 步骤；④ 新增 Excluded Paths 排除项配置（`Ctrl+Alt+S → Build, Execution, Deployment | Deployment | Options → Excluded Paths`）；⑤ 新增自动同步验证步骤（加注释 → Ctrl+S → grep 验证）；对应 08 号 v6.2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| **v3.0** | 2026-11-20 | **全面对齐 08 号 v6.1 混合模式架构**：① **openEuler 版本从 22.03 LTS SP3 改为 24.03 LTS**（与 Dockerfile 对齐）；② **IP 从 `192.168.1.100` 改为 `192.168.80.134`**；③ **项目路径从 `02-IBMCP_Python` 改为 `02-IBMCP`**，欧拉路径从 `~/01-IBMCP` 改为 `/home/meng/ibmcp`；④ **远程开发模式从 Gateway 改为 SSH 远程解释器 + Deployment**（Windows 是代码源头）；⑤ **PG 口径从 `postgres/device_db` 无密码改为 `ibmcp/ibmcp/ibmcp`**；⑥ **C++ 标准从 C++14 改为 C++17**；⑦ **`COLLECTOR_BACKEND` 从 `ffi` 改为 `native`/`stub`**；⑧ **uvicorn 启动命令从 `create_app --factory` 改为 `app.main:app`**；⑨ **冒烟测试从 `from industrial_collector import Collector` 改为 `NativeCollector` + `industrial_collector._core`**；⑩ **Python 从源码编译 3.11.6 改为 openEuler 24.03 自带 python3.11**（删除编译步骤）；⑪ **docker-compose.yml 从内联改为引用项目自带 `deployments/openeuler/docker-compose.yml`**；⑫ **Nginx 从 8080 自定义配置改为 80 端口 + `packaging/nginx/ibmcp.conf` + 前端静态部署**；⑬ **SSH 用户从 root 改为 meng（开发）/ root（bootstrap）**；⑭ **新增前端构建部署步骤**（npm build → `/home/meng/ibmcp/frontend-dist/`）；⑮ **引用 bootstrap.sh 一键脚本**（7 步），删除手动逐步安装；⑯ 全文交叉引用路径 `02-IBMCP_Python` → `02-IBMCP` |
+| **v4.3** | 2026-11-20 | **「环境架构速览」全章按 08 号 §1.1 开发侧拓扑补齐**：① 新增 **§0.1 开发侧拓扑** —— 原样引用 08 号 §1.1 的 ASCII 拓扑图（Windows 编辑层 / 桥接虚拟机 / Docker 数据层 + C++ 编译层 + 部署运行层 + 现场设备 五块），并加「读图要点」把五个矩形块映射到本文档对应章节锚点；② 新增 **§0.3 开发期/部署期职责边界** —— 双表复刻 08 号 §1.2（开发期三侧「做什么/不做什么」+ 部署期三侧），补一句「欧拉开发期只当 C++ 编译器 + 数据库服务器」的记忆锚；③ 新增 **§0.4 连通性矩阵** —— 把图中每条带标注箭头落成 8 行验证表（起点/终点/端口/协议/Windows PowerShell 验证命令/对应章节），补齐原速览缺失的「照图搭完该测什么」；④ 原速览表格降级为 **§0.2 分层职责表**，保留「为什么 FastAPI/C++ 不进 Docker」与开发期分工说明；⑤ 第 ① 步 Docker 层锚点修正，删掉 v4.2 遗留的 BOM 字符 |
+| **v4.2** | 2026-11-20 | **全面对齐 08 号 v7.1，修正 5 处与仓库实际不符项**：① **文档头版本号从 v3.1 改为 v4.2**（原头部滞后于正文记录），对应方案从 v6.1 更新为 v7.1，修掉 BOM 与空引用行；② **§3.2 步骤表第 6 步从「安装 uv」改为「校验 `python3.11 -m venv` + `pip`」**——`build.sh` 实际用 venv + pip，**从不调用 uv**，原描述是无效步骤；③ **§4.1 脚本节选与仓库 `build.sh` 逐行对齐**：补 `PYTHON_BIN`/`PIP_INDEX`（清华源）/`-DPYTHON_EXECUTABLE` 双变量/`pip install $PIP_OPTS`，新增「两个 Python 变量都要传」的 ABI 说明与 `PIP_INDEX` 内网覆盖法；④ **§4.4 `.env` 的 `COLLECTOR_BACKEND` 从 `stub` 改为 `native`**——欧拉侧 `_core.so` 已编译，`stub` 只属 Windows 本地；⑤ **§八 新增「Windows 本地 FastAPI（stub）」与「前端类」两张排查表**（共 9 条，含 `/api` 规则必须 `ws: true` 的握手坑）；⑥ **Nginx 排查表 WS 条目补 `/api/v1/ws/collect` 完整路径**；⑦ **版本记录表按降序重排**（原 v3.0 与 v4.1 顺序错乱） |
+| **v4.1** | 2026-11-20 | **前端部署口径修正为「Windows 构建 + 上传静态产物」**：① 明确欧拉**不安装 nodejs/npm**、不执行 `npm run build`，`bootstrap.sh` 的 dnf 清单不含 Node；② §4.5 重写为「Windows `npm run build` → scp `dist\*` → 欧拉 `nginx -s reload`」三段式；③ §3.1 首次同步排除项把 `frontend/node_modules/`、`frontend/dist/` 合并为**整个 `frontend/` 不上传**（`dist` 走 scp 单独传）；④ 第七部分验收脚本与故障排查同步更新；⑤ 补「为什么不在欧拉装 Node」的磁盘与构建效率说明 |
+| **v4.0** | 2026-11-20 | **对齐 08 号 v7.0 新架构（Python 本地解释器 + C++ 欧拉编译）**：① 速览表口径改为「Windows 跑本地解释器 + 前端 dev / 欧拉跑 venv + C++ 编译 + Docker 数据服务」；② 删除「SSH 远程解释器 + Deployment 自动同步」全部表述，改为「开发期欧拉只需承载 C++ 源码 + 部署脚本 + venv」；③ §3.1 首次同步范围收窄为 `collector-cpp/ python/ deployments/ packaging/ pyproject.toml`（**backend/ frontend/ 开发期不上传**），方式 B 从 PyCharm 改为 **CLion Deployment**，排除项新增 `backend/`、`frontend/`；④ §5.1 从 On SSH 改为 **Add Local Interpreter（本地 .venv）** + `backend/.env` 直连欧拉（`PG_HOST=192.168.80.134`、`COLLECTOR_BACKEND=stub`）+ 本地 Run Configuration；⑤ §5.2 CMake 构建目录修正为 `/home/meng/ibmcp/collector-cpp/build`；⑥ §5.3 隧道降级为**可选**（默认直连欧拉）；⑦ §5.4 从「隧道验证」改为「连通性验证」（测 192.168.80.134）；⑧ §5.5 端口表新增 5173 与 8000 双主人说明、删除 debugpy 5678；⑨ 第七部分 checklist 改为本地 FastAPI/Vite 自检 + 欧拉数据服务连通；⑩ 磁盘清理删除 `~/.cache/JetBrains/` |
+| v3.1     | 2026-11-20 | **§3.1 + §5.1 全部对齐 PyCharm 2026.3 界面**：① 方式 B（PyCharm Deployment）从 2 行注释扩写为 4 步详细操作（确保目录就绪 → Project 工具窗口 Alt+1 → 右键 `Deployment | Upload to` → File Transfer 窗口监控 → 验证文件到位 → 确认自动同步）；② 方式 A（scp）补充 `chown` 和 `ssh` 远程执行命令；③ §5.1/§5.2 菜单路径全部改为 `Ctrl+Alt+S → Build, Execution, Deployment | Deployment`（2026.3 界面），SFTP 用 SSH configuration 下拉，新增 Use as Default 步骤；④ 新增 Excluded Paths 排除项配置（`Ctrl+Alt+S → Build, Execution, Deployment | Deployment | Options → Excluded Paths`）；⑤ 新增自动同步验证步骤（加注释 → Ctrl+S → grep 验证）；对应 08 号 v6.2 |
+| **v3.0** | 2026-11-20 | **全面对齐 08 号 v6.1 混合模式架构**：① **openEuler 版本从 22.03 LTS SP3 改为 24.03 LTS**（与 Dockerfile 对齐）；② **IP 从 `192.168.1.100` 改为 `192.168.80.134`**；③ **项目路径从 `02-IBMCP_Python` 改为 `02-IBMCP`**，欧拉路径从 `~/01-IBMCP` 改为 `/home/meng/ibmcp`；④ **远程开发模式从 Gateway 改为 SSH 远程解释器 + Deployment**（Windows 是代码源头）；⑤ **PG 口径从 `postgres/device_db` 无密码改为 `ibmcp/ibmcp/ibmcp`**；⑥ **C++ 标准从 C++14 改为 C++17**；⑦ **`COLLECTOR_BACKEND` 从 `ffi` 改为 `native`/`stub`**；⑧ **uvicorn 启动命令从 `create_app --factory` 改为 `app.main:app`**；⑨ **冒烟测试从 `from industrial_collector import Collector` 改为 `NativeCollector` + `industrial_collector._core`**；⑩ **Python 从源码编译 3.11.6 改为 openEuler 24.03 自带 python3.11**（删除编译步骤）；⑪ **docker-compose.yml 从内联改为引用项目自带 `deployments/openeuler/docker-compose.yml`**；⑫ **Nginx 从 8080 自定义配置改为 80 端口 + `packaging/nginx/ibmcp.conf` + 前端静态部署**；⑬ **SSH 用户从 root 改为 meng（开发）/ root（bootstrap）**；⑭ **新增前端部署步骤**（~~推送源码到欧拉构建~~ → 现口径：**Windows 侧 `npm run build`，scp 上传 `dist\*` 到 `/home/meng/ibmcp/frontend-dist/`**，欧拉不装 Node）；⑮ **引用 bootstrap.sh 一键脚本**（7 步），删除手动逐步安装；⑯ 全文交叉引用路径 `02-IBMCP_Python` → `02-IBMCP` |
 | v2.3     | 2026-11-20 | Python 版本降级：源码编译从 3.11.9 改为 3.11.6（v3.0 已改为系统自带，不再编译）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | v2.2     | 2026-11-20 | 整合实战踩坑指南（本地 ISO 源 9 小节）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | v2.0     | 2026-11-20 | 与 08 号架构方案对齐的完整重写                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
