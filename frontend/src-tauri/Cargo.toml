@@ -1,0 +1,33 @@
+[package]
+name = "ibmcp-tauri"
+version = "1.0.0"
+description = "IBMCP 工业黑盒集控平台桌面壳"
+authors = ["IBMCP Team"]
+edition = "2021"
+
+[lib]
+name = "ibmcp_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
+tauri-plugin-websocket = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-os = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+anyhow = "1"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

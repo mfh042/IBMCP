@@ -1,0 +1,7 @@
+enable_testing()
+find_package(GTest QUIET)
+if(GTest_FOUND)
+  add_executable(collector_tests test_collector.cpp)
+  target_link_libraries(collector_tests PRIVATE GTest::gtest GTest::gtest_main)
+  add_test(NAME collector_tests COMMAND collector_tests)
+endif()

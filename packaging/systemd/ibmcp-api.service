@@ -1,0 +1,17 @@
+[Unit]
+Description=IBMCP FastAPI API + Collector Extension
+After=network.target postgresql.service redis.service
+
+[Service]
+Type=simple
+User=ibmcp
+WorkingDirectory=/opt/ibmcp/backend
+EnvironmentFile=/opt/ibmcp/backend/.env
+ExecStart=/opt/ibmcp/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+LimitNPROC=8192
+
+[Install]
+WantedBy=multi-user.target

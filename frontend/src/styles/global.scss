@@ -1,0 +1,56 @@
+:root {
+  --ibmc-primary: #2563eb;
+  --ibmc-primary-light: #3b82f6;
+  --ibmc-bg: #f1f5f9;
+  --ibmc-card-bg: #ffffff;
+  --ibmc-text: #1e293b;
+  --ibmc-text-secondary: #64748b;
+  --ibmc-border: #e2e8f0;
+}
+
+html, body, #app {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background-color: var(--ibmc-bg);
+  color: var(--ibmc-text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.page-card {
+  background: var(--ibmc-card-bg);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+
+  h2, h3 {
+    margin: 0;
+  }
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.status-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}

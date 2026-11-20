@@ -1,0 +1,4 @@
+app
+industrial_collector
+migrations
+tests
