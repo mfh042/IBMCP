@@ -4,10 +4,10 @@ After=network.target postgresql.service redis.service
 
 [Service]
 Type=simple
-User=ibmcp
-WorkingDirectory=/opt/ibmcp/backend
-EnvironmentFile=/opt/ibmcp/backend/.env
-ExecStart=/opt/ibmcp/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+User=meng
+WorkingDirectory=/home/meng/ibmcp/backend
+EnvironmentFile=/home/meng/ibmcp/backend/.env
+ExecStart=/home/meng/ibmcp/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 Restart=always
 RestartSec=3
 LimitNOFILE=65536

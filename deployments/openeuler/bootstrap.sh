@@ -126,8 +126,13 @@ else
     echo "⚠️  $NGINX_CONF_SRC 未找到，跳过（后续手动部署）"
 fi
 
-# 创建前端静态目录（nginx.conf 里 root /opt/ibmcp/frontend-dist）
-mkdir -p /opt/ibmcp/frontend-dist
+# 创建前端静态目录（nginx.conf 里 root $PROJECT_ROOT/frontend-dist）
+mkdir -p "$PROJECT_ROOT/frontend-dist"
+
+# Nginx 以 nginx 用户运行，需要能穿越 $PROJECT_ROOT 及父目录读取静态文件
+chmod o+x "$PROJECT_ROOT" "$(dirname "$PROJECT_ROOT")"
+chmod -R o+rX "$PROJECT_ROOT/frontend-dist"
+echo "✅ 前端静态目录权限已放开（$PROJECT_ROOT/frontend-dist）"
 
 nginx -t 2>&1 && echo "✅ Nginx 配置语法正确" || { echo "❌ Nginx 配置语法错误"; exit 1; }
 systemctl enable --now nginx
@@ -166,13 +171,13 @@ echo "     ├─ Nginx           :80    (systemctl status nginx)"
 echo "     └─ FastAPI         :8000  (尚未启动，见下方步骤)"
 echo ""
 echo " 接下来的步骤："
-echo "   1. 项目代码已在 /opt/ibmcp（PyCharm Deployment 自动同步）"
-echo "   2. cd /opt/ibmcp && bash deployments/openeuler/build.sh  # 编译 C++ 扩展 + venv"
-echo "   3. cd /opt/ibmcp/backend && cp .env.example .env          # 确认 COLLECTOR_BACKEND=native"
-echo "   4. source /opt/ibmcp/venv/bin/activate && alembic upgrade head"
+echo "   1. 项目代码已在 $PROJECT_ROOT（PyCharm Deployment 自动同步）"
+echo "   2. cd $PROJECT_ROOT && bash deployments/openeuler/build.sh  # 编译 C++ 扩展 + venv"
+echo "   3. cd $PROJECT_ROOT/backend && cp .env.example .env          # 确认 COLLECTOR_BACKEND=native"
+echo "   4. source $PROJECT_ROOT/venv/bin/activate && alembic upgrade head"
 echo "   5. 前端构建并部署到 Nginx："
-echo "      cd /opt/ibmcp/frontend && npm install && npm run build"
-echo "      cp -r dist/* /opt/ibmcp/frontend-dist/"
+echo "      cd $PROJECT_ROOT/frontend && npm install && npm run build"
+echo "      cp -r dist/* $PROJECT_ROOT/frontend-dist/"
 echo "   6. uvicorn app.main:app --host 0.0.0.0 --port 8000"
 echo ""
 echo " 验证："

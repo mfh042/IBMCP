@@ -1,6 +1,6 @@
 # =============================================================================
 # IBMCP 开发环境 Docker Compose —— PG15 / Redis / Node-RED
-# 用法：cd /opt/ibmcp && docker compose -f deployments/openeuler/docker-compose.yml up -d
+# 用法：cd /home/meng/ibmcp && docker compose -f deployments/openeuler/docker-compose.yml up -d
 #
 # 本文件只管三个纯服务容器（PG / Redis / Node-RED）。
 # FastAPI + C++ 扩展 + Nginx 必须裸机跑（见 08 号文档 §1.3）。

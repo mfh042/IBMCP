@@ -25,7 +25,7 @@
 > libmodbus.so / open62541.so 和现场 PLC 网段。详见 08 号 §1.3。
 
 > **远程开发模式**：SSH 远程解释器 + Deployment 自动同步（**非** JetBrains Gateway）。代码源头在 Windows（
-> `E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP`），欧拉侧 `/opt/ibmcp` 是 PyCharm 自动同步的镜像副本。详见 08 号 §〇。
+> `E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP`），欧拉侧 `/home/meng/ibmcp` 是 PyCharm 自动同步的镜像副本。详见 08 号 §〇。
 
 ---
 
@@ -316,7 +316,7 @@ ssh -i "$env:USERPROFILE\.ssh\ibmcp_euler" meng@192.168.80.134 "hostname"
 
 ### 3.1 同步项目代码到欧拉（首次）
 
-在执行 bootstrap 之前，需要先把项目代码同步一次到欧拉的 `/opt/ibmcp`。有三种方式，**推荐方式 B**：
+在执行 bootstrap 之前，需要先把项目代码同步一次到欧拉的 `/home/meng/ibmcp`。有三种方式，**推荐方式 B**：
 
 #### 方式 A：scp 直接拷贝（在 Windows PowerShell 执行）
 
@@ -324,20 +324,20 @@ ssh -i "$env:USERPROFILE\.ssh\ibmcp_euler" meng@192.168.80.134 "hostname"
 # —— 在 Windows PowerShell 执行 ——
 scp -r "E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP\*" meng@192.168.80.134:/tmp/ibmcp-upload/
 # 然后在欧拉上：
-ssh meng@192.168.80.134 "sudo mkdir -p /opt/ibmcp && sudo cp -r /tmp/ibmcp-upload/* /opt/ibmcp/ && sudo chown -R meng:meng /opt/ibmcp"
+ssh meng@192.168.80.134 "sudo mkdir -p /home/meng/ibmcp && sudo cp -r /tmp/ibmcp-upload/* /home/meng/ibmcp/ && sudo chown -R meng:meng /home/meng/ibmcp"
 ```
 
 > 适合：还没装 PyCharm、或想快速验证。缺点：后续改代码还是要手动 scp。
 
 #### 方式 B：PyCharm Deployment 全量上传（推荐）
 
-**前提**：PyCharm 已按 §5.1 配好 SSH 远程解释器和 Deployment（SFTP → euler-ibmcp，Root path `/opt/ibmcp`）。
+**前提**：PyCharm 已按 §5.1 配好 SSH 远程解释器和 Deployment（SFTP → euler-ibmcp，Root path `/home/meng/ibmcp`）。
 
 **第 1 步：确保欧拉侧目录就绪**
 
 ```bash
 # 在欧拉上执行（只需一次）
-sudo mkdir -p /opt/ibmcp && sudo chown meng:meng /opt/ibmcp
+sudo mkdir -p /home/meng/ibmcp && sudo chown meng:meng /home/meng/ibmcp
 ```
 
 **第 2 步：在 PyCharm 中发起全量上传**
@@ -354,16 +354,16 @@ sudo mkdir -p /opt/ibmcp && sudo chown meng:meng /opt/ibmcp
 
 ```bash
 # 在欧拉上执行
-ls /opt/ibmcp/
+ls /home/meng/ibmcp/
 # 应看到：backend/  frontend/  collector-cpp/  python/  deployments/  packaging/  pyproject.toml
 
-ls /opt/ibmcp/backend/app/main.py              # FastAPI 入口
-ls /opt/ibmcp/collector-cpp/CMakeLists.txt     # C++ 构建
-ls /opt/ibmcp/deployments/openeuler/bootstrap.sh
+ls /home/meng/ibmcp/backend/app/main.py              # FastAPI 入口
+ls /home/meng/ibmcp/collector-cpp/CMakeLists.txt     # C++ 构建
+ls /home/meng/ibmcp/deployments/openeuler/bootstrap.sh
 
 # 确认排除项没传上去
-ls /opt/ibmcp/venv/                    # 应不存在
-ls /opt/ibmcp/frontend/node_modules/   # 应不存在
+ls /home/meng/ibmcp/venv/                    # 应不存在
+ls /home/meng/ibmcp/frontend/node_modules/   # 应不存在
 ```
 
 **第 4 步：确认自动同步生效**
@@ -372,7 +372,7 @@ ls /opt/ibmcp/frontend/node_modules/   # 应不存在
 1. PyCharm 打开 backend/app/core/config.py
 2. 加一行注释 # sync test → Ctrl+S
 3. File Transfer 工具窗口应出现一条新传输记录：config.py → euler-ibmcp
-4. 欧拉侧验证：grep "sync test" /opt/ibmcp/backend/app/core/config.py
+4. 欧拉侧验证：grep "sync test" /home/meng/ibmcp/backend/app/core/config.py
 5. 能匹配 → 自动同步正常 → 删掉测试注释 → Ctrl+S
 ```
 
@@ -389,8 +389,8 @@ ls /opt/ibmcp/frontend/node_modules/   # 应不存在
 #### 方式 C：git clone（如果有远程仓库）
 
 ```bash
-sudo mkdir -p /opt/ibmcp && sudo chown meng:meng /opt/ibmcp
-cd /opt/ibmcp && git clone <你的仓库地址> .
+sudo mkdir -p /home/meng/ibmcp && sudo chown meng:meng /home/meng/ibmcp
+cd /home/meng/ibmcp && git clone <你的仓库地址> .
 ```
 
 > 适合：项目已推到远程仓库。缺点：后续还是要配 PyCharm Deployment 做自动同步。
@@ -403,7 +403,7 @@ cd /opt/ibmcp && git clone <你的仓库地址> .
 
 ```bash
 # —— 在欧拉虚拟机上执行（需要 root）——
-sudo bash /opt/ibmcp/deployments/openeuler/bootstrap.sh
+sudo bash /home/meng/ibmcp/deployments/openeuler/bootstrap.sh
 ```
 
 脚本自动完成以下 **7 步**（与 08 号 §3.1 完全对齐）：
@@ -414,7 +414,7 @@ sudo bash /opt/ibmcp/deployments/openeuler/bootstrap.sh
 | 2/7  | dnf 安装裸机编译工具链：gcc/g++/cmake/python3-devel/postgresql-devel/pybind11-devel/libmodbus-devel/mosquitto-devel/open62541-devel/nginx/git/wget/curl 等（**不装 postgresql/redis，走 Docker**） |
 | 3/7  | 安装 Docker Engine + docker compose 插件，启动 docker 守护进程，当前用户加入 docker 组                                                                                                             |
 | 4/7  | `docker compose up -d` 启动 PG15 + Redis 7 + Node-RED 三个容器（用 `deployments/openeuler/docker-compose.yml`），等待健康检查通过                                                                  |
-| 5/7  | 部署 Nginx 配置（`packaging/nginx/ibmcp.conf` → `/etc/nginx/conf.d/ibmcp.conf`），创建前端静态目录 `/opt/ibmcp/frontend-dist`，启动 Nginx                                                          |
+| 5/7  | 部署 Nginx 配置（`packaging/nginx/ibmcp.conf` → `/etc/nginx/conf.d/ibmcp.conf`），创建前端静态目录 `/home/meng/ibmcp/frontend-dist`，启动 Nginx                                                          |
 | 6/7  | 安装 uv（Python 包管理器）                                                                                                                                                                         |
 | 7/7  | 放开 ptrace_scope（CLion gdbserver 远程调试需要）                                                                                                                                                  |
 
@@ -437,7 +437,7 @@ sudo bash /opt/ibmcp/deployments/openeuler/bootstrap.sh
 
 ```bash
 # Docker 容器状态
-cd /opt/ibmcp
+cd /home/meng/ibmcp
 docker compose -f deployments/openeuler/docker-compose.yml ps
 # 应看到 ibmcp-postgres / ibmcp-redis / ibmcp-nodered 三个容器 Up
 
@@ -470,7 +470,7 @@ cmake --version | head -1
 `deployments/openeuler/build.sh` 负责创建 venv + 编译 C++ 扩展 + 安装 backend：
 
 ```bash
-cd /opt/ibmcp
+cd /home/meng/ibmcp
 bash deployments/openeuler/build.sh
 ```
 
@@ -525,7 +525,7 @@ echo "open62541: $(rpm -q open62541-devel 2>/dev/null || echo 'NOT FOUND')"
 编译完成后，验证 `_core.so` 扩展能加载：
 
 ```bash
-cd /opt/ibmcp
+cd /home/meng/ibmcp
 source venv/bin/activate
 
 # 验证 C++ 扩展直接加载
@@ -560,7 +560,7 @@ nc.shutdown()
 ### 4.4 Step 4：配置 `.env` + Alembic 迁移
 
 ```bash
-cd /opt/ibmcp/backend
+cd /home/meng/ibmcp/backend
 cp .env.example .env
 
 # 确认 .env 内容（PG 口径已与 Docker 容器对齐）：
@@ -572,7 +572,7 @@ cp .env.example .env
 #   REDIS_URL=redis://127.0.0.1:6379/0
 #   COLLECTOR_BACKEND=stub  ← 开发期先用 stub，联调时改 native
 
-source /opt/ibmcp/venv/bin/activate
+source /home/meng/ibmcp/venv/bin/activate
 alembic upgrade head
 # 输出：Running upgrade -> 0001_initial_schema, done
 
@@ -590,7 +590,7 @@ PGPASSWORD=ibmcp psql -U ibmcp -h 127.0.0.1 -d ibmcp -c "\dt"
 ### 4.5 Step 5：前端构建并部署到 Nginx
 
 ```bash
-cd /opt/ibmcp/frontend
+cd /home/meng/ibmcp/frontend
 
 # 安装前端依赖（首次）
 npm install
@@ -598,8 +598,8 @@ npm install
 # 构建（产出 dist/ 目录）
 npm run build
 
-# 部署到 Nginx 静态目录（bootstrap.sh 已创建 /opt/ibmcp/frontend-dist）
-cp -r dist/* /opt/ibmcp/frontend-dist/
+# 部署到 Nginx 静态目录（bootstrap.sh 已创建 /home/meng/ibmcp/frontend-dist）
+cp -r dist/* /home/meng/ibmcp/frontend-dist/
 
 # 重载 Nginx（无中断）
 sudo nginx -t && sudo nginx -s reload
@@ -616,8 +616,8 @@ http://192.168.80.134:1880      → Node-RED（Docker）
 ### 4.6 Step 6：手动启动 FastAPI 验证全链路
 
 ```bash
-cd /opt/ibmcp/backend
-source /opt/ibmcp/venv/bin/activate
+cd /home/meng/ibmcp/backend
+source /home/meng/ibmcp/venv/bin/activate
 
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
@@ -644,7 +644,7 @@ curl http://192.168.80.134
 >
 > | 错误                                              | 排查                                                                                                       |
 > |---------------------------------------------------|------------------------------------------------------------------------------------------------------------|
-> | `No module named 'app'`                           | 必须在 `backend/` 目录下跑（Working directory: `/opt/ibmcp/backend`）                                      |
+> | `No module named 'app'`                           | 必须在 `backend/` 目录下跑（Working directory: `/home/meng/ibmcp/backend`）                                      |
 > | `No module named 'industrial_collector._core'`    | venv 激活了吗？`pip install ./python ./backend` 成功了吗？                                                 |
 > | `RuntimeError: industrial_collector._core 未安装` | `COLLECTOR_BACKEND=native` 但没编译扩展 → 改 `COLLECTOR_BACKEND=stub` 先跑通 Python 侧                     |
 > | PG 连接报错                                       | 确认 `PG_HOST=127.0.0.1` `PG_USER=ibmcp` `PG_PASSWORD=ibmcp`（不是 `postgres/device_db`）；PG 容器在跑吗？ |
@@ -663,15 +663,15 @@ curl http://192.168.80.134
 Ctrl+Alt+S → Python | Interpreter → Add Interpreter → On SSH
 步骤 1：选 "Existing" → 选已配好的 SSH 配置 euler-ibmcp
         或选 "New" → Host: 192.168.80.134 / Port: 22 / Username: meng → Key pair 认证
-步骤 2：Interpreter path: /opt/ibmcp/venv/bin/python3.11
+步骤 2：Interpreter path: /home/meng/ibmcp/venv/bin/python3.11
 步骤 3：Sync folder:
         Local path:  E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP
-        Remote path: /opt/ibmcp
+        Remote path: /home/meng/ibmcp
 步骤 4：右下角弹出同步提示 → 点 "Sync and auto-upload files"
 
 # —— 配置 Deployment（自动同步）——
 Ctrl+Alt+S → Build, Execution, Deployment | Deployment → + → SFTP → "euler-ibmcp"
-Connection 标签 → SSH configuration: 选 euler-ibmcp → Root path: /opt/ibmcp
+Connection 标签 → SSH configuration: 选 euler-ibmcp → Root path: /home/meng/ibmcp
 Mappings 标签 → Local path: E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP
                 Deployment path: /
 选中 euler-ibmcp → 点 "Use as Default"
@@ -696,13 +696,13 @@ Debugger:         /usr/bin/gdb
 
 Ctrl+Alt+S → Build, Execution, Deployment | Deployment → + → SFTP → euler-ibmcp
     Mappings → Local path:        E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP\collector-cpp
-               Deployment path:    /opt/ibmcp/collector-cpp
+               Deployment path:    /home/meng/ibmcp/collector-cpp
     Options → Upload changed files automatically to the default server: Always
               勾选 Never overwrite local files from deployment server
 
 Ctrl+Alt+S → Build, Execution, Deployment | CMake → + → Debug-Remote
     Toolchain: Remote Host
-    Build directory: /opt/ibmcp/build/cmake-build-debug
+    Build directory: /home/meng/ibmcp/build/cmake-build-debug
 ```
 
 ### 5.3 SSH 端口转发
@@ -764,7 +764,7 @@ echo "Docker: $(docker --version)"
 
 echo ""
 echo "========== Docker 容器 =========="
-cd /opt/ibmcp && docker compose -f deployments/openeuler/docker-compose.yml ps
+cd /home/meng/ibmcp && docker compose -f deployments/openeuler/docker-compose.yml ps
 
 echo ""
 echo "========== Nginx =========="
@@ -790,17 +790,17 @@ curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/api/v1/docs 2>&1 ||
 
 echo ""
 echo "========== C++ 扩展 =========="
-source /opt/ibmcp/venv/bin/activate
+source /home/meng/ibmcp/venv/bin/activate
 python -c "import industrial_collector._core as c; print('✅ _core loaded:', c.health())" \
     2>&1 || echo "⚠️ _core 不可用（stub 模式正常）"
 
 echo ""
 echo "========== 前端 =========="
-ls /opt/ibmcp/frontend-dist/index.html 2>/dev/null && echo "✅ 前端已部署" || echo "⚠️ 前端未部署（npm run build + cp dist/*）"
+ls /home/meng/ibmcp/frontend-dist/index.html 2>/dev/null && echo "✅ 前端已部署" || echo "⚠️ 前端未部署（npm run build + cp dist/*）"
 
 echo ""
 echo "========== Alembic =========="
-cd /opt/ibmcp/backend && alembic current 2>&1
+cd /home/meng/ibmcp/backend && alembic current 2>&1
 ```
 
 Windows 侧验证：
@@ -831,10 +831,10 @@ foreach ($u in $urls) {
 
 ```
 □ VMware → 启动 openEuler 虚拟机 → 确认 IP 192.168.80.134 能 ping 通
-□ Docker 容器：cd /opt/ibmcp && docker compose -f deployments/openeuler/docker-compose.yml ps
+□ Docker 容器：cd /home/meng/ibmcp && docker compose -f deployments/openeuler/docker-compose.yml ps
     → ibmcp-postgres / ibmcp-redis / ibmcp-nodered 全部 Up
 □ 裸机服务：systemctl status nginx → active
-□ 欧拉侧 venv：source /opt/ibmcp/venv/bin/activate → python --version
+□ 欧拉侧 venv：source /home/meng/ibmcp/venv/bin/activate → python --version
 □ PyCharm → 打开 02-IBMCP → 确认远程解释器已连（状态栏显示 SSH: euler-ibmcp）
 □ PyCharm → 确认 Deployment 自动同步开启
 □ CLion → Open Recent → Remote Host 自动连上
@@ -892,7 +892,7 @@ foreach ($u in $urls) {
 | Nginx 502 反代 FastAPI | 宿主 `curl http://127.0.0.1:8000` 测 → FastAPI 是否在跑                                                                                                  |
 | Nginx 改配置没生效     | `sudo nginx -t && sudo nginx -s reload`（不要 systemctl restart）                                                                                        |
 | WS 断开                | nginx.conf WS location 必须加 `proxy_http_version 1.1` + `proxy_set_header Upgrade $http_upgrade` + `Connection upgrade` + 足够大的 `proxy_read_timeout` |
-| 前端页面 404           | 确认 `/opt/ibmcp/frontend-dist/index.html` 存在（`npm run build` + `cp dist/*`）                                                                         |
+| 前端页面 404           | 确认 `/home/meng/ibmcp/frontend-dist/index.html` 存在（`npm run build` + `cp dist/*`）                                                                         |
 | 前端 SPA 刷新 404      | nginx.conf `location /` 必须有 `try_files $uri $uri/ /index.html`                                                                                        |
 
 ### Python / FastAPI
@@ -921,7 +921,7 @@ foreach ($u in $urls) {
 docker system prune -f
 
 # 每次 Release 编译完清 C++ 临时文件
-rm -rf /opt/ibmcp/build/
+rm -rf /home/meng/ibmcp/build/
 
 # 清 PyCharm 远程缓存
 rm -rf ~/.cache/JetBrains/
@@ -934,7 +934,7 @@ rm -rf ~/.cache/JetBrains/
 | 版本     | 日期       | 变更                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 |----------|------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **v3.1** | 2026-11-20 | **§3.1 + §5.1 全部对齐 PyCharm 2026.3 界面**：① 方式 B（PyCharm Deployment）从 2 行注释扩写为 4 步详细操作（确保目录就绪 → Project 工具窗口 Alt+1 → 右键 `Deployment | Upload to` → File Transfer 窗口监控 → 验证文件到位 → 确认自动同步）；② 方式 A（scp）补充 `chown` 和 `ssh` 远程执行命令；③ §5.1/§5.2 菜单路径全部改为 `Ctrl+Alt+S → Build, Execution, Deployment | Deployment`（2026.3 界面），SFTP 用 SSH configuration 下拉，新增 Use as Default 步骤；④ 新增 Excluded Paths 排除项配置（`Ctrl+Alt+S → Build, Execution, Deployment | Deployment | Options → Excluded Paths`）；⑤ 新增自动同步验证步骤（加注释 → Ctrl+S → grep 验证）；对应 08 号 v6.2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| **v3.0** | 2026-11-20 | **全面对齐 08 号 v6.1 混合模式架构**：① **openEuler 版本从 22.03 LTS SP3 改为 24.03 LTS**（与 Dockerfile 对齐）；② **IP 从 `192.168.1.100` 改为 `192.168.80.134`**；③ **项目路径从 `02-IBMCP_Python` 改为 `02-IBMCP`**，欧拉路径从 `~/01-IBMCP` 改为 `/opt/ibmcp`；④ **远程开发模式从 Gateway 改为 SSH 远程解释器 + Deployment**（Windows 是代码源头）；⑤ **PG 口径从 `postgres/device_db` 无密码改为 `ibmcp/ibmcp/ibmcp`**；⑥ **C++ 标准从 C++14 改为 C++17**；⑦ **`COLLECTOR_BACKEND` 从 `ffi` 改为 `native`/`stub`**；⑧ **uvicorn 启动命令从 `create_app --factory` 改为 `app.main:app`**；⑨ **冒烟测试从 `from industrial_collector import Collector` 改为 `NativeCollector` + `industrial_collector._core`**；⑩ **Python 从源码编译 3.11.6 改为 openEuler 24.03 自带 python3.11**（删除编译步骤）；⑪ **docker-compose.yml 从内联改为引用项目自带 `deployments/openeuler/docker-compose.yml`**；⑫ **Nginx 从 8080 自定义配置改为 80 端口 + `packaging/nginx/ibmcp.conf` + 前端静态部署**；⑬ **SSH 用户从 root 改为 meng（开发）/ root（bootstrap）**；⑭ **新增前端构建部署步骤**（npm build → `/opt/ibmcp/frontend-dist/`）；⑮ **引用 bootstrap.sh 一键脚本**（7 步），删除手动逐步安装；⑯ 全文交叉引用路径 `02-IBMCP_Python` → `02-IBMCP` |
+| **v3.0** | 2026-11-20 | **全面对齐 08 号 v6.1 混合模式架构**：① **openEuler 版本从 22.03 LTS SP3 改为 24.03 LTS**（与 Dockerfile 对齐）；② **IP 从 `192.168.1.100` 改为 `192.168.80.134`**；③ **项目路径从 `02-IBMCP_Python` 改为 `02-IBMCP`**，欧拉路径从 `~/01-IBMCP` 改为 `/home/meng/ibmcp`；④ **远程开发模式从 Gateway 改为 SSH 远程解释器 + Deployment**（Windows 是代码源头）；⑤ **PG 口径从 `postgres/device_db` 无密码改为 `ibmcp/ibmcp/ibmcp`**；⑥ **C++ 标准从 C++14 改为 C++17**；⑦ **`COLLECTOR_BACKEND` 从 `ffi` 改为 `native`/`stub`**；⑧ **uvicorn 启动命令从 `create_app --factory` 改为 `app.main:app`**；⑨ **冒烟测试从 `from industrial_collector import Collector` 改为 `NativeCollector` + `industrial_collector._core`**；⑩ **Python 从源码编译 3.11.6 改为 openEuler 24.03 自带 python3.11**（删除编译步骤）；⑪ **docker-compose.yml 从内联改为引用项目自带 `deployments/openeuler/docker-compose.yml`**；⑫ **Nginx 从 8080 自定义配置改为 80 端口 + `packaging/nginx/ibmcp.conf` + 前端静态部署**；⑬ **SSH 用户从 root 改为 meng（开发）/ root（bootstrap）**；⑭ **新增前端构建部署步骤**（npm build → `/home/meng/ibmcp/frontend-dist/`）；⑮ **引用 bootstrap.sh 一键脚本**（7 步），删除手动逐步安装；⑯ 全文交叉引用路径 `02-IBMCP_Python` → `02-IBMCP` |
 | v2.3     | 2026-11-20 | Python 版本降级：源码编译从 3.11.9 改为 3.11.6（v3.0 已改为系统自带，不再编译）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | v2.2     | 2026-11-20 | 整合实战踩坑指南（本地 ISO 源 9 小节）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | v2.0     | 2026-11-20 | 与 08 号架构方案对齐的完整重写                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
