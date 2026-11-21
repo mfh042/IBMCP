@@ -1,6 +1,6 @@
 [Unit]
 Description=IBMCP FastAPI API + Collector Extension
-After=network.target postgresql.service redis.service
+After=network.target docker.service nginx.service
 
 [Service]
 Type=simple

@@ -11,9 +11,31 @@ from app.core.deps import get_collector_backend, get_db_pool, require_login
 from app.core.errors import BizError
 from app.db.pool import DatabasePool
 from app.services.collector_orchestrator import CollectorOrchestrator
+from app.services.audit_service import operator_of, write_audit
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+_SERVER_MANAGED_CONFIG_FIELDS = {"config_status", "run_status"}
+
+
+def _reject_managed_fields(body: dict) -> None:
+    """config_status / run_status 只允许通过状态机接口变更（02 号 §4.1）。"""
+    bad = sorted(set(body) & _SERVER_MANAGED_CONFIG_FIELDS)
+    if bad:
+        raise BizError(
+            code=422,
+            message="field(s) managed by server, use activate/unload instead",
+            data={"fields": bad},
+        )
+
+
+def _collection_payload(body: dict) -> dict:
+    """对外仍用 binding_id，落库列名为 device_binding_id（02 号 §4.5）。"""
+    data = dict(body)
+    if "binding_id" in data:
+        data["device_binding_id"] = data.pop("binding_id")
+    return data
 
 
 @router.get("/equipments")
@@ -38,6 +60,17 @@ async def list_configs(
         f"SELECT COUNT(*) AS cnt FROM running_equipment_config {where}", *args
     )
     return {"items": [dict(r) for r in rows], "total": int(total_row["cnt"])}
+
+
+@router.get("/equipments/code/{code}")
+async def get_config_by_code(code: str, pool: DatabasePool = Depends(get_db_pool),
+                             user: dict = Depends(require_login)) -> dict:
+    row = await pool.fetchrow(
+        "SELECT * FROM running_equipment_config WHERE config_code = $1 LIMIT 1", code,
+    )
+    if row is None:
+        raise BizError(code=404, message=f"config not found: {code}")
+    return dict(row)
 
 
 @router.get("/equipments/{config_id}")
@@ -70,7 +103,7 @@ async def config_status(config_id: int, pool: DatabasePool = Depends(get_db_pool
     )
     point_count = await pool.fetchrow(
         "SELECT COUNT(*) AS cnt FROM running_device_collection c "
-        "JOIN running_route_device r ON r.id = c.binding_id "
+        "JOIN running_route_device r ON r.id = c.device_binding_id "
         "JOIN running_equipment_route e ON e.id = r.route_config_id "
         "WHERE e.config_id = $1 AND c.enabled = 1",
         config_id,
@@ -101,7 +134,7 @@ async def expand_config(config_id: int, pool: DatabasePool = Depends(get_db_pool
         expanded_bindings = []
         for b in bindings:
             collections = await pool.fetch(
-                "SELECT * FROM running_device_collection WHERE binding_id = $1 ORDER BY id", b["id"],
+                "SELECT * FROM running_device_collection WHERE device_binding_id = $1 ORDER BY id", b["id"],
             )
             expanded_bindings.append({**dict(b), "collections": [dict(c) for c in collections]})
         expanded_routes.append({**dict(r), "devices": expanded_bindings})
@@ -146,6 +179,7 @@ async def create_config(body: dict, pool: DatabasePool = Depends(get_db_pool),
                         user: dict = Depends(require_login)) -> dict:
     if "engineer" not in (user.get("roles") or []) and "admin" not in (user.get("roles") or []):
         raise BizError(code=403, message="engineer+ role required")
+    _reject_managed_fields(body)
     now = int(time.time())
     data = {**body, "config_status": 0, "run_status": 0, "created_at": now, "updated_at": now}
     cols = ", ".join(data.keys())
@@ -153,6 +187,10 @@ async def create_config(body: dict, pool: DatabasePool = Depends(get_db_pool),
     row = await pool.fetchrow(
         f"INSERT INTO running_equipment_config ({cols}) VALUES ({placeholders}) RETURNING *",
         *data.values(),
+    )
+    await write_audit(
+        pool, level="L1", target_id=int(row["id"]), action="create",
+        operator=operator_of(user), detail={"config_code": row["config_code"]},
     )
     return dict(row)
 
@@ -162,6 +200,7 @@ async def update_config(config_id: int, body: dict, pool: DatabasePool = Depends
                         user: dict = Depends(require_login)) -> dict:
     if "engineer" not in (user.get("roles") or []) and "admin" not in (user.get("roles") or []):
         raise BizError(code=403, message="engineer+ role required")
+    _reject_managed_fields(body)
     row = await pool.fetchrow("SELECT id FROM running_equipment_config WHERE id = $1", config_id)
     if row is None:
         raise BizError(code=404, message="config not found")
@@ -172,6 +211,10 @@ async def update_config(config_id: int, body: dict, pool: DatabasePool = Depends
     updated = await pool.fetchrow(
         f"UPDATE running_equipment_config SET {updates} WHERE id = ${len(vals)} RETURNING *",
         *vals,
+    )
+    await write_audit(
+        pool, level="L1", target_id=config_id, action="update",
+        operator=operator_of(user), detail={"fields": sorted(body)},
     )
     return dict(updated)
 
@@ -186,19 +229,30 @@ async def activate_config(
     if "engineer" not in (user.get("roles") or []) and "admin" not in (user.get("roles") or []):
         raise BizError(code=403, message="engineer+ role required")
     orchestrator = CollectorOrchestrator(pool, collector)
-    return await orchestrator.activate_config(config_id)
+    result = await orchestrator.activate_config(config_id)
+    await write_audit(
+        pool, level="L1", target_id=config_id, action="activate",
+        operator=operator_of(user),
+        detail={"plan_hash": result.get("plan_hash"), "skipped": result.get("skipped", False)},
+        revision_after=result.get("revision"),
+    )
+    return result
 
 
 @router.post("/equipments/{config_id}/unload")
 async def unload_config(config_id: int, pool: DatabasePool = Depends(get_db_pool),
+                        collector: CollectorApi = Depends(get_collector_backend),
                         user: dict = Depends(require_login)) -> dict:
     if "engineer" not in (user.get("roles") or []) and "admin" not in (user.get("roles") or []):
         raise BizError(code=403, message="engineer+ role required")
-    await pool.execute(
-        "UPDATE running_equipment_config SET config_status = 0, updated_at = $1 WHERE id = $2",
-        int(time.time()), config_id,
+    orchestrator = CollectorOrchestrator(pool, collector)
+    result = await orchestrator.deactivate_config(config_id)
+    await write_audit(
+        pool, level="L1", target_id=config_id, action="deactivate",
+        operator=operator_of(user), detail={"device_count": result.get("device_count")},
+        revision_after=result.get("revision"),
     )
-    return {"ok": True, "message": "config deactivated (recompile full plan to remove devices from collector)"}
+    return result
 
 
 @router.post("/equipments/recompile")
@@ -231,31 +285,40 @@ async def delete_config(config_id: int, pool: DatabasePool = Depends(get_db_pool
     )
     await pool.execute("DELETE FROM running_equipment_route WHERE config_id = $1", config_id)
     await pool.execute("DELETE FROM running_equipment_config WHERE id = $1", config_id)
+    await write_audit(
+        pool, level="L1", target_id=config_id, action="delete",
+        operator=operator_of(user), detail={"config_status": int(row["config_status"])},
+    )
     return {"ok": True}
 
 
 @router.post("/equipments/{config_id}/sync")
 async def sync_to_using(config_id: int, pool: DatabasePool = Depends(get_db_pool),
+                        collector: CollectorApi = Depends(get_collector_backend),
                         user: dict = Depends(require_login)) -> dict:
+    """兼容端点：旧版走 DB 函数 sync_config_to_using_tables，新版统一由计划下发投影。"""
     if "admin" not in (user.get("roles") or []):
         raise BizError(code=403, message="admin required")
-    try:
-        await pool.execute("SELECT sync_config_to_using_tables($1)", config_id)
-    except Exception as exc:
-        raise BizError(code=3002, message=f"sync failed: {exc}") from exc
-    return {"ok": True}
+    orchestrator = CollectorOrchestrator(pool, collector)
+    result = await orchestrator.recompile_all()
+    await write_audit(
+        pool, level="L1", target_id=config_id, action="sync",
+        operator=operator_of(user), detail={"device_count": result.get("device_count")},
+        revision_after=result.get("revision"),
+    )
+    return {"ok": True, **result}
 
 
 @router.delete("/equipments/{config_id}/cleanup")
 async def cleanup_from_using(config_id: int, pool: DatabasePool = Depends(get_db_pool),
                              user: dict = Depends(require_login)) -> dict:
+    """旧版清理运行态端点已废弃：停用配置走 /unload，历史数据不再物理清理。"""
     if "admin" not in (user.get("roles") or []):
         raise BizError(code=403, message="admin required")
-    try:
-        await pool.execute("SELECT cleanup_config_from_using_tables($1)", config_id)
-    except Exception as exc:
-        raise BizError(code=3002, message=f"cleanup failed: {exc}") from exc
-    return {"ok": True}
+    raise BizError(
+        code=410,
+        message="deprecated: use POST /config/equipments/{id}/unload; historical data is kept",
+    )
 
 
 @router.get("/routes")
@@ -288,6 +351,26 @@ async def create_route(body: dict, pool: DatabasePool = Depends(get_db_pool),
     return dict(row)
 
 
+@router.get("/routes/{route_id}/expand")
+async def expand_route(route_id: int, pool: DatabasePool = Depends(get_db_pool),
+                       user: dict = Depends(require_login)) -> dict:
+    """展开单条工艺路线：设备绑定 + 采集项（兼容前端路线绑定页）。"""
+    route = await pool.fetchrow("SELECT * FROM running_equipment_route WHERE id = $1", route_id)
+    if route is None:
+        raise BizError(code=404, message="route not found")
+    bindings = await pool.fetch(
+        "SELECT * FROM running_route_device WHERE route_config_id = $1 ORDER BY id", route_id,
+    )
+    expanded = []
+    for b in bindings:
+        collections = await pool.fetch(
+            "SELECT * FROM running_device_collection WHERE device_binding_id = $1 ORDER BY id",
+            b["id"],
+        )
+        expanded.append({**dict(b), "collections": [dict(c) for c in collections]})
+    return {**dict(route), "devices": expanded}
+
+
 @router.put("/routes/{route_id}")
 async def update_route(route_id: int, body: dict, pool: DatabasePool = Depends(get_db_pool),
                        user: dict = Depends(require_login)) -> dict:
@@ -311,7 +394,7 @@ async def delete_route(route_id: int, pool: DatabasePool = Depends(get_db_pool),
     if "engineer" not in (user.get("roles") or []) and "admin" not in (user.get("roles") or []):
         raise BizError(code=403, message="engineer+ role required")
     await pool.execute(
-        "DELETE FROM running_device_collection WHERE binding_id IN (SELECT id FROM running_route_device WHERE route_config_id = $1)",
+        "DELETE FROM running_device_collection WHERE device_binding_id IN (SELECT id FROM running_route_device WHERE route_config_id = $1)",
         route_id)
     await pool.execute("DELETE FROM running_route_device WHERE route_config_id = $1", route_id)
     await pool.execute("DELETE FROM running_equipment_route WHERE id = $1", route_id)
@@ -370,7 +453,7 @@ async def delete_device_binding(binding_id: int, pool: DatabasePool = Depends(ge
                                 user: dict = Depends(require_login)) -> dict:
     if "engineer" not in (user.get("roles") or []) and "admin" not in (user.get("roles") or []):
         raise BizError(code=403, message="engineer+ role required")
-    await pool.execute("DELETE FROM running_device_collection WHERE binding_id = $1", binding_id)
+    await pool.execute("DELETE FROM running_device_collection WHERE device_binding_id = $1", binding_id)
     await pool.execute("DELETE FROM running_route_device WHERE id = $1", binding_id)
     return {"ok": True}
 
@@ -384,7 +467,7 @@ async def list_collections(
     where = ""
     args: list[Any] = []
     if binding_id is not None:
-        where = "WHERE binding_id = $1"
+        where = "WHERE device_binding_id = $1"
         args.append(binding_id)
     rows = await pool.fetch(
         f"SELECT * FROM running_device_collection {where} ORDER BY id", *args,
@@ -398,7 +481,7 @@ async def create_collection(body: dict, pool: DatabasePool = Depends(get_db_pool
     if "engineer" not in (user.get("roles") or []) and "admin" not in (user.get("roles") or []):
         raise BizError(code=403, message="engineer+ role required")
     now = int(time.time())
-    data = {**body, "created_at": now, "updated_at": now}
+    data = {**_collection_payload(body), "created_at": now, "updated_at": now}
     cols = ", ".join(data.keys())
     ph = ", ".join(f"${i + 1}" for i in range(len(data)))
     row = await pool.fetchrow(f"INSERT INTO running_device_collection ({cols}) VALUES ({ph}) RETURNING *",
@@ -412,7 +495,7 @@ async def update_collection(point_id: int, body: dict, pool: DatabasePool = Depe
     if "engineer" not in (user.get("roles") or []) and "admin" not in (user.get("roles") or []):
         raise BizError(code=403, message="engineer+ role required")
     now = int(time.time())
-    data = {**body, "updated_at": now}
+    data = {**_collection_payload(body), "updated_at": now}
     sets = ", ".join(f"{k} = ${i + 1}" for i, k in enumerate(data.keys()))
     vals = list(data.values()) + [point_id]
     row = await pool.fetchrow(

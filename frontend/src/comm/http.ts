@@ -11,6 +11,11 @@ function isRawJsonPath(url?: string): boolean {
     return RAW_JSON_PATHS.some((p) => path.endsWith(p))
 }
 
+function withApiVersion(url?: string): string | undefined {
+    if (!url || !url.startsWith('/api/') || url.startsWith('/api/v1/')) return url
+    return `/api/v1${url.slice('/api'.length)}`
+}
+
 export const httpService = axios.create({
     baseURL: CommConfig.apiBase,
     timeout: 10000,
@@ -23,6 +28,7 @@ export const httpService = axios.create({
 }
 
 httpService.interceptors.request.use((config) => {
+    config.url = withApiVersion(config.url)
     const token = localStorage.getItem('ibmc_token')
     if (token) config.headers.Authorization = `Bearer ${token}`
     if (IS_DEV) {

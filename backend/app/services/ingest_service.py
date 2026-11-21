@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import datetime, timezone
 
 from app.core.collector.protocol import CollectorApi
 from app.db.pool import DatabasePool
@@ -98,13 +99,16 @@ class SamplePump:
         self._point_cache: dict[str, dict] = {}
 
     async def _warmup_point_cache(self) -> None:
+        """缓存 plan 点位主键 → using_points 行的映射（02 号 §5.2）。"""
         rows = await self.pool.fetch(
-            "SELECT id, device_code, item_name, address, alarm_high, alarm_low, alarm_enabled, "
-            "scale, \"offset\" FROM using_points",
+            "SELECT id, using_point_id, device_code, item_name, address, "
+            "alarm_high, alarm_low, alarm_enabled, scale, \"offset\" "
+            "FROM using_points WHERE enabled = true AND using_point_id IS NOT NULL",
         )
-        for r in rows:
-            self._point_cache[str(r["id"])] = dict(r)
-        logger.info("point cache warmed", count=len(self._point_cache))
+        self._point_cache = {
+            str(r["using_point_id"]): dict(r) for r in rows
+        }
+        logger.info("point cache warmed count=%s", len(self._point_cache))
 
     def start(self) -> None:
         if self._running:
@@ -112,7 +116,7 @@ class SamplePump:
         self._running = True
         loop = asyncio.get_event_loop()
         self._task = loop.create_task(self._run())
-        logger.info("SamplePump started", flush_interval_ms=self.flush_interval_ms)
+        logger.info("SamplePump started flush_interval_ms=%s", self.flush_interval_ms)
 
     def stop(self) -> None:
         self._running = False
@@ -133,14 +137,19 @@ class SamplePump:
             await asyncio.sleep(self.flush_interval_ms / 1000.0)
 
     async def _tick(self) -> None:
-        new_seq, samples = self.collector.snapshot_since(self._seq)
-        if not samples:
-            self._seq = new_seq
-            return
+        # 扩展调用可能阻塞（GIL 外），放到线程池避免卡住事件循环
+        new_seq, samples = await asyncio.to_thread(self.collector.snapshot_since, self._seq)
         self._seq = new_seq
+        if not samples:
+            return
+
+        # 计划变更后新点位可能不在缓存里，命中未知 point_id 时刷新一次
+        if any(str(s.get("point_id")) not in self._point_cache for s in samples):
+            await self._warmup_point_cache()
+
         now = int(time.time())
 
-        ts_rows, alive_point_ids = self._prepare_ts_rows(samples)
+        ts_rows = self._prepare_ts_rows(samples, now)
         if ts_rows:
             await self._batch_copy_ts(ts_rows)
 
@@ -164,31 +173,38 @@ class SamplePump:
             ],
         })
 
-    def _prepare_ts_rows(self, samples: list[dict]) -> tuple[list[tuple], set[str]]:
+    def _prepare_ts_rows(self, samples: list[dict], now: int) -> list[tuple]:
         rows: list[tuple] = []
         seen: set[tuple] = set()
-        alive: set[str] = set()
         for s in samples:
-            ts = s.get("ts") or time.time()
-            if isinstance(ts, int):
-                from datetime import datetime, timezone
-                dt = datetime.fromtimestamp(ts / 1000.0, tz=timezone.utc)
-            else:
-                dt = ts
-            pid = str(s["point_id"])
-            alive.add(pid)
-            key = (dt, pid)
+            meta = self._point_cache.get(str(s.get("point_id")))
+            if meta is None:
+                continue
+
+            ts_ms = s.get("ts_ms")
+            if ts_ms is None:
+                ts_ms = int(now * 1000)
+            dt = datetime.fromtimestamp(int(ts_ms) / 1000.0, tz=timezone.utc)
+
+            point_id = int(meta["id"])
+            key = (dt, point_id)
             if key in seen:
                 continue
             seen.add(key)
+
+            try:
+                value = float(s["value"])
+            except (TypeError, ValueError):
+                continue
+
             rows.append((
                 dt,
-                int(pid),
-                float(s["value"]),
+                point_id,
+                value,
                 str(s.get("quality", "Good")),
                 str(s.get("raw_value", "")),
             ))
-        return rows, alive
+        return rows
 
     async def _batch_copy_ts(self, rows: list[tuple]) -> None:
         conn = await self.pool.pool().acquire()

@@ -757,7 +757,7 @@ version = "0.1.0"
 requires-python = ">=3.11"
 
 [tool.setuptools.packages.find]
-where = ["backend", "python"]  # backend/app 与 python/industrial_collector 一起被收进来
+where = ["backend", "collector-python"]  # backend/app 与 python/industrial_collector 一起被收进来
 
 [tool.setuptools.package-data]
 industrial_collector = ["*.so", "*.pyd", "py.typed"]

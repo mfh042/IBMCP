@@ -55,11 +55,11 @@ backend/tests/__init__.py
 backend/tests/conftest.py
 backend/tests/api/__init__.py
 backend/tests/unit/__init__.py
+collector-python/industrial_collector/__init__.py
+collector-python/industrial_collector/protocol.py
+collector-python/industrial_collector/py.typed
 ibmcp.egg-info/PKG-INFO
 ibmcp.egg-info/SOURCES.txt
 ibmcp.egg-info/dependency_links.txt
 ibmcp.egg-info/requires.txt
 ibmcp.egg-info/top_level.txt
-python/industrial_collector/__init__.py
-python/industrial_collector/protocol.py
-python/industrial_collector/py.typed

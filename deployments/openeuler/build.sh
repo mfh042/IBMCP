@@ -32,9 +32,11 @@ sudo dnf install -y cmake gcc-c++ make >/dev/null 2>&1 || true
 # 这里按需补装 python3.11-devel（仅是头文件，不是装 Python 解释器）。
 PY_INCLUDE="$("$PYTHON_BIN" -c 'import sysconfig; print(sysconfig.get_path("include"))' 2>/dev/null || echo "")"
 if [ -z "$PY_INCLUDE" ] || [ ! -f "$PY_INCLUDE/Python.h" ]; then
-    echo "   Python.h 缺失，按需安装 python3.11-devel（仅头文件，用于编译 _core.so）..."
-    sudo dnf install -y python3.11-devel || {
-        echo "❌ 安装 python3.11-devel 失败，无法编译 pybind11 扩展"
+    echo "   Python.h 缺失，按需安装 python3-devel（仅头文件，用于编译 _core.so）..."
+    sudo dnf install -y python3.11-devel 2>/dev/null \
+        || sudo dnf install -y python3-devel \
+        || {
+        echo "❌ 安装 python3-devel 失败，无法编译 pybind11 扩展"
         exit 1
     }
 else
@@ -56,8 +58,8 @@ cmake -S collector-cpp -B "$BUILD_DIR" \
     -DPYTHON_EXECUTABLE="$VIRTUAL_ENV/bin/python"
 cmake --build "$BUILD_DIR" -j"$(nproc)"
 
-echo "[IBMCP] 安装 _core.so 到 python/industrial_collector/ ..."
-cmake --install "$BUILD_DIR" --prefix python
+echo "[IBMCP] 安装 _core.so 到 collector-python/industrial_collector/ ..."
+cmake --install "$BUILD_DIR" --prefix collector-python
 
 echo "[IBMCP] 安装 industrial_collector + backend ..."
 # shellcheck disable=SC2086

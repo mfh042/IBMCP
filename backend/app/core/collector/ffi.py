@@ -29,7 +29,7 @@ class NativeCollector:
         except ImportError as exc:
             raise RuntimeError(
                 "industrial_collector._core 未安装，请在 openEuler 侧执行 "
-                "`pip install ./python ./backend`（Windows 侧默认用 stub）"
+                "`bash deployments/openeuler/build.sh`（Windows 侧默认用 stub）"
             ) from exc
 
     def init(self, cfg: dict[str, Any] | None = None) -> None:

@@ -102,6 +102,17 @@ class StubCollector:
                 "device_count": len(plan.get("devices", [])),
             }
         )
+        now_ms = int(time.time() * 1000)
+        for dev in plan.get("devices", []):
+            self._emit_event(
+                {
+                    "type": "device_status",
+                    "device_key": dev.get("device_key", ""),
+                    "status": 1,
+                    "reason": "connected",
+                    "ts_ms": now_ms,
+                }
+            )
         return 0
 
     def set_event_callback(self, cb: Callable[[dict[str, Any]], None] | None) -> None:
@@ -171,6 +182,18 @@ class StubCollector:
         return cmd_id
 
     def shutdown(self) -> None:
+        if self._plan is not None and self._cb is not None:
+            now_ms = int(time.time() * 1000)
+            for dev in self._plan.get("devices", []):
+                self._emit_event(
+                    {
+                        "type": "device_status",
+                        "device_key": dev.get("device_key", ""),
+                        "status": 0,
+                        "reason": "collector shutdown",
+                        "ts_ms": now_ms,
+                    }
+                )
         self._running = False
         self._plan = None
 
@@ -231,7 +254,7 @@ class StubCollector:
     def _tick(self) -> None:
         if not self._plan or not self._running:
             return
-        now = int(time.time())
+        now_ms = int(time.time() * 1000)
         for dev in self._plan.get("devices", []):
             dk = dev.get("device_key", "")
             for pt in dev.get("points", []):
@@ -242,8 +265,8 @@ class StubCollector:
                         "device_key": dk,
                         "point_id": pt.get("point_id"),
                         "value": round(random.uniform(0, 100), 2),
-                        "quality": 0,
-                        "ts": now,
+                        "quality": "Good",
+                        "ts_ms": now_ms,
                     }
                 )
         self._tick_count += 1

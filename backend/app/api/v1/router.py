@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+import time
 
 from app.api.v1 import (
     auth,
@@ -13,6 +14,14 @@ from app.api.v1 import (
 )
 
 api_v1_router = APIRouter()
+
+
+@api_v1_router.get("/ping", tags=["system"])
+async def ping() -> dict:
+    """前端连通性探测（无鉴权、无数据库依赖）。"""
+    return {"status": "ok", "time": int(time.time())}
+
+
 api_v1_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_v1_router.include_router(static_dict.router, prefix="/static", tags=["static"])
 api_v1_router.include_router(running_config.router, prefix="/config", tags=["config"])

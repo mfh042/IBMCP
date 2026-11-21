@@ -614,7 +614,7 @@ endif()
 
 target_compile_options(_core PRIVATE -Wall -Wextra -Wno-unused-parameter)
 
-# 相对路径，靠 build.sh 的 `cmake --install --prefix python` 落到 python/industrial_collector/
+# 相对路径，靠 build.sh 的 `cmake --install --prefix collector-python` 落到 collector-python/industrial_collector/
 install(TARGETS _core LIBRARY DESTINATION industrial_collector)
 ```
 
@@ -652,7 +652,7 @@ install(TARGETS _core LIBRARY DESTINATION industrial_collector)
 # pyproject.toml 片段（完整版见 05 号 5.1）
 [tool.scikit-build]
 cmake.source-dir = "collector-cpp"
-wheel.packages = ["python/industrial_collector"]
+wheel.packages = ["collector-python/industrial_collector"]
 build-dir = "build/{wheel_tag}"
 ```
 
@@ -758,7 +758,7 @@ id -nG | grep -q dialout && echo "✅ dialout" || echo "⚠ 不在 dialout 组"
 | 欧拉终端（`dev-env.sh`）   | 编译、`native` 联调、查看日志（Python 调试在 Windows 本地） |
 
 > **不需要 VS Code Remote-SSH / debugpy**：Python 侧在 Windows 本地用本地解释器调试（断点零网络延迟），
-> 详见 08 号 §7.1。
+> 详见 08 号 §5.1。
 
 ### 9.2 远程构建配置（CLion 侧）
 

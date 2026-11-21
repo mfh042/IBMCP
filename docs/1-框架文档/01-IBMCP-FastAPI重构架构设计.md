@@ -1,6 +1,10 @@
 ﻿# IBMCP FastAPI 重构架构设计
 
-> 版本：v1.1　　编写日期：2026-11-18　　目标运行环境：openEuler（欧拉）　　开发环境：Windows 11
+> 版本：v1.3　　编写日期：2026-11-18　　目标运行环境：openEuler（欧拉）　　开发环境：Windows 11
+>
+> **v1.3 变更（2026-11-21）**：按已落地代码校订文档——① 全文 IP 由 `192.168.80.134` 更正为实际在用的 `192.168.80.135`；② §6 工程结构补 12 号走读链接、修正 `pyproject.toml` 位置（在仓库根而非 backend/）、补全已实装的 services（event_dispatcher / command_waiter / audit_service）、标注 Redis 暂未接入与 repositories/schemas 为空占位；③ §11 标注 `using_devices/using_points` 由 FastAPI 编排器投影写入（非扩展直写）、`/api/ping` 已加 v1 前缀、补当前实现进度；④ 新增 12 号《文件代码结构及代码说明》。
+>
+> **v1.2 变更（2026-11-20）**：配套文档列表移除已废弃的「10-openEuler本地ISO源实战指南」条目——欧拉侧不再使用本地 ISO 源安装软件，统一走系统在线源/镜像源（由 `bootstrap.sh` 处理），10 号文档保留为废弃声明页。
 >
 > **v1.1 变更（2026-11-20）**：对齐"欧拉不单独装 Python、PG/Redis/Node-RED 走 Docker、Windows 用 uv"的统一口径——① §9.2 选型表：Python 改为系统自带（不单独装），PG15/Redis/Node-RED 改为 Docker 容器，编译工具链去掉 `python3.11-devel` 常驻项（改由 `build.sh` 按需补装，仅头文件）；② §9.3 安装顺序：删除裸机 dnf 装 PG18/Redis/Python 的旧步骤，改为 Docker Compose + 系统自带 Python；③ §9.5 systemd `After` 由 `postgresql-18.service/redis.service` 改为 `docker.service/nginx.service`；④ §10.2 Windows 侧由 `py -m venv` + `pip` 改为 **uv 管理**（`uv sync`，解释器锁定 3.11.18）；⑤ 全文 `pip install ./backend` 旧口径改为项目根 `pip install .`（`pyproject.toml` 在项目根）。
 >
@@ -362,20 +366,25 @@ async def wrap_result(request, call_next): ...
 
 ### 6.1 目录结构（单仓多模块）
 
+> ⚠️ **本节为设计期目标结构**，实现细节已演进。与当前代码逐文件对齐的权威走读见
+> [12-文件代码结构及代码说明](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/12-文件代码结构及代码说明.md)；
+> 冲突时以 12 号 + 实际源码为准。
+
 ```
-01-IBMCP/
-├── backend/                        # 新增：FastAPI 业务主框架
-│   ├── pyproject.toml                 # 依赖与工具配置（uv / poetry 均可）
-│   ├── .python-version                # 3.11.x
+02-IBMCP/                        # 本仓库根（pyproject.toml / uv.lock 在此）
+├── pyproject.toml                  # scikit-build-core + pybind11 + 后端依赖（root pip install .）
+├── .python-version                 # 3.11.x（uv 锁定解释器）
+├── backend/                        # FastAPI 业务主框架
+│   ├── .env.example                # 环境变量模板（生产值在欧拉 /home/meng/ibmcp/backend/.env）
 │   ├── alembic.ini
-│   ├── migrations/                    # Alembic 版本（替代 01-init.sql 的增量演进）
+│   ├── migrations/                 # Alembic 版本（替代 01-init.sql 的增量演进，当前 head=0003）
 │   ├── app/
 │   │   ├── main.py                    # create_app()：装配路由、中间件、生命周期
 │   │   ├── core/
 │   │   │   ├── config.py              # Settings（pydantic-settings，读 .env / 环境变量）
 │   │   │   ├── logging.py             # structlog JSON 日志（含 request_id）
 │   │   │   ├── security.py            # JWT / 密码哈希（argon2）
-│   │   │   ├── deps.py                # 依赖注入：db_pool / redis / collector / current_user
+│   │   │   ├── deps.py                # 依赖注入：db_pool / collector / current_user（Redis 暂未接入）
 │   │   │   └── errors.py              # 业务异常 → Result 包膜
 │   │   ├── db/
 │   │   │   ├── pool.py                # asyncpg 连接池（单进程一个 pool）
@@ -387,13 +396,16 @@ async def wrap_result(request, call_next): ...
 │   │   │   └── running/               # 对齐 02 号文档，一表一文件
 │   │   ├── repositories/              # 纯 SQL 访问层（asyncpg，不用 ORM 做写路径）
 │   │   ├── services/
-│   │   │   ├── static/                # 静态字典业务
-│   │   │   ├── running/               # 运行动态配置业务
-│   │   │   ├── plan_compiler.py       # running_* → 采集计划
-│   │   │   ├── collector_orchestrator.py  # 下发/回执/修订号管理
-│   │   │   ├── ingest_service.py      # 批量时序写入 + 报警判定
-│   │   │   ├── control_service.py     # 控制命令台账与下发
-│   │   │   └── query_service.py       # 历史/聚合查询
+│   │   │   ├── plan_compiler.py       # running_* → 采集计划（五级链展开）
+│   │   │   ├── collector_orchestrator.py  # 下发/回执/修订号管理 + using_* 投影
+│   │   │   ├── ingest_service.py      # SamplePump：批量时序写入 + 报警判定
+│   │   │   ├── event_dispatcher.py    # 扩展事件消费：设备状态/写回执/计划回执 → DB + WS
+│   │   │   ├── control_service.py     # 控制命令台账与下发（支持 wait=true 同步等待）
+│   │   │   ├── command_waiter.py      # write_result 的 Future 唤醒注册表
+│   │   │   ├── audit_service.py       # audit_config_change 写入（失败不影响主流程）
+│   │   │   ├── query_service.py       # 历史/聚合查询
+│   │   │   ├── static/                # 静态字典业务（当前为空占位，逻辑在 api/v1 内联）
+│   │   │   └── running/               # 运行动态配置业务（当前为空占位）
 │   │   ├── api/v1/
 │   │   │   ├── router.py              # 汇总 include_router
 │   │   │   ├── static_dict.py         # /static/*
@@ -404,16 +416,14 @@ async def wrap_result(request, call_next): ...
 │   │   │   ├── auth.py                # /auth/*
 │   │   │   ├── collector_admin.py     # /api/v1/collector/*（状态/协议清单/健康）
 │   │   │   └── ws.py                  # /api/v1/ws/collect（单端点，四固定主题）
-│   │   ├── core/collector/             # 扩展访问层（ffi.py / stub.py / pump.py / protocol.py）
+│   │   ├── core/collector/             # 扩展访问层（ffi.py / stub.py / protocol.py）
 │   │   │   ├── protocol.py            # CollectorApi Protocol（唯一契约定义）
 │   │   │   ├── ffi.py                 # 真实扩展薄封装（import industrial_collector）
 │   │   │   └── stub.py                # 桩实现（Windows/无设备，校验规则与扩展一致）
 │   │   └── ws/
 │   │       ├── hub.py                 # 连接注册表 + 按 topic 广播
 │   │       └── topics.py              # data / device / alarm / control 四主题
-│   └── tests/
-│       ├── unit/                      # plan_compiler / stub 契约测试
-│       └── api/                       # httpx.AsyncClient 接口测试
+│   └── tests/                         # 扁平单测：test_plan_compiler / test_static_validation / test_command_waiter
 │
 ├── collector-cpp/                     # C++ 采集扩展源码（从现有 backend/ 精简而来，最终编译为 _core 扩展）
 │   ├── CMakeLists.txt                 # 被 scikit-build-core 调用，产出 _core 扩展模块
@@ -428,8 +438,8 @@ async def wrap_result(request, call_next): ...
 │   │   └── common/                    # event_emitter（状态事件）+ logger
 │   └── tests/                         # GoogleTest：驱动 mock + 调度器 + store 测试
 │
-├── python/
-│   └── industrial_collector/           # 对外 Python 包（wheel.packages 指向此处）
+├── collector-python/
+│   └── industrial_collector/           # 对外 Python 包（扩展包壳，与 collector-cpp/ 配对）
 │       ├── __init__.py                 # 再导出 Collector 等 8 个接口 + 6 个异常类
 │       ├── protocol.py                 # CollectorApi Protocol（与 app/core/collector/protocol.py 同源）
 │       └── py.typed
@@ -474,7 +484,7 @@ def create_app() -> FastAPI:
 **生命周期顺序（关键）**：
 
 1. 建 `asyncpg.Pool`（`min_size=5, max_size=20`）
-2. 建 Redis 连接池
+2. ~~建 Redis 连接池~~（PG/Redis 容器已部署，但业务侧缓存/限流暂未接入，见 §11 待办）
 3. `collector = Collector(cfg)`（**必须在 fork 之后**）→ `collector.set_event_callback(python_cb)`
 4. `CollectorOrchestrator.bootstrap()`：对比 DB 最新 `plan_revision` 与即将下发的 revision，不一致则 `apply_plan()` 并等待
    `plan_ack`
@@ -709,7 +719,7 @@ version = "0.1.0"
 requires-python = ">=3.11"
 
 [tool.setuptools.packages.find]
-where = ["backend", "python"]
+where = ["backend", "collector-python"]
 
 [tool.setuptools.package-data]
 industrial_collector = ["*.so", "*.pyd", "py.typed"]
@@ -874,7 +884,7 @@ uvicorn 拉起 → lifespan.start
 
 > **部署口径**：PG15 / Redis7 / Node-RED **全部走 Docker Compose**（`deployments/openeuler/docker-compose.yml`）；
 > 欧拉裸机**只装** Nginx + C++ 构建工具链，Python **用系统自带**（不单独装）。一键脚本 `deployments/openeuler/bootstrap.sh`
-> 已固化此流程（详见 08 号 §3.1、09 号）。下面仅列裸机侧的关键命令。
+> 已固化此流程（详见 09 号 §4）。下面仅列裸机侧的关键命令。
 
 ```bash
 # 0) 裸机基础（不含 python/redis/pg——python 用系统自带，pg/redis 走 Docker）
@@ -1161,13 +1171,13 @@ npm run dev        # Vite HMR，浏览器 http://localhost:5173
 | 场景 | target |
 |------|--------|
 | 日常（stub 在 Windows） | `http://127.0.0.1:8000` |
-| `native` 联调（FastAPI 在欧拉） | `http://192.168.80.134:8000` |
+| `native` 联调（FastAPI 在欧拉） | `http://192.168.80.135:8000` |
 
 **WebSocket 联调注意**：后端 WS 路径是 `/api/v1/ws/collect`，会命中 Vite 的 `/api` proxy 规则，**因此 `/api` 规则也必须设
 `ws: true`**（`vite.config.ts` 已配置）；`/ws` 规则保留供旧版 `/ws/push` 过渡使用。任一规则缺 `ws: true`，WS 升级请求就会
 被当普通 HTTP 处理而失败。
 
-> **不需要 SSH 隧道**：欧拉在 VMware 桥接网段，Windows 可直连 `192.168.80.134` 的 5432/6379/1880/8000。隧道仅作安全加固的可选项。
+> **不需要 SSH 隧道**：欧拉在 VMware 桥接网段，Windows 可直连 `192.168.80.135` 的 5432/6379/1880/8000。隧道仅作安全加固的可选项。
 
 ### 10.5 环境变量清单（两侧差异点）
 
@@ -1175,8 +1185,8 @@ npm run dev        # Vite HMR，浏览器 http://localhost:5173
 
 | 变量 | Windows（`backend/.env`） | 欧拉（部署 / systemd） | 说明 |
 |------|---------------------------|------------------------|------|
-| `PG_HOST` | `192.168.80.134` | `127.0.0.1` | Windows 无 PG，必须连欧拉 Docker |
-| `REDIS_URL` | `redis://192.168.80.134:6379/0` | `redis://127.0.0.1:6379/0` | 同上 |
+| `PG_HOST` | `192.168.80.135` | `127.0.0.1` | Windows 无 PG，必须连欧拉 Docker |
+| `REDIS_URL` | `redis://192.168.80.135:6379/0` | `redis://127.0.0.1:6379/0` | 同上 |
 | `COLLECTOR_BACKEND` | **`stub`** | **`native`** | 核心开关；Windows 无 Linux `.so` |
 | `APP_HOST` | `127.0.0.1` | `0.0.0.0` | 部署时需对外 |
 | `APP_ENV` | `development` | `production` | 影响日志与 Docs 开关 |
@@ -1190,7 +1200,7 @@ APP_HOST=127.0.0.1
 APP_PORT=8000
 APP_SECRET_KEY=<openssl rand -hex 32 生成，勿用 change-me>
 
-PG_HOST=192.168.80.134
+PG_HOST=192.168.80.135
 PG_PORT=5432
 PG_USER=ibmcp
 PG_PASSWORD=ibmcp
@@ -1198,7 +1208,7 @@ PG_DATABASE=ibmcp
 PG_POOL_MIN=5
 PG_POOL_MAX=20
 
-REDIS_URL=redis://192.168.80.134:6379/0
+REDIS_URL=redis://192.168.80.135:6379/0
 
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 
@@ -1274,13 +1284,15 @@ Settings 的 `collector_backend` 选择：
 | `drivers/*`（7 个驱动）                                                                   | **→ collector-cpp `drivers/*`**                                       | 尽量原样迁移，去掉 `DbHelper` / WS 依赖         |
 | `common/DbHelper` / `common/Result.h`                                                     | **废弃**                                                              | 扩展不碰 DB；Result 由 Python 中间件实现        |
 | `db/01-init.sql`                                                                          | **→ 基线 + Alembic 迁移**                                             | 触发器同步链取消（见 5.3）                      |
-| `main.cpp`                                                                                | **→ `app/main.py`**                                                   | `/api/ping`、`/api/collector/status` 保留同路径 |
+| `main.cpp`                                                                                | **→ `app/main.py`**                                                   | `/api/v1/ping`、`/api/v1/collector/health` 保留同功能（加 v1 前缀） |
 
 ### 11.2 分期落地路线（每阶段可独立上线验收）
 
+> **当前进度（2026-11-21，见 12 号文档逐文件核对）**：P0（契约/stub 全链路）✅、P1（静态+运行配置 CRUD + 校验 + 审计 + 激活下发）✅、P4（欧拉 systemd + Nginx + Alembic 上线）✅ 已落地并在 `192.168.80.135` 运行；P2（C++ 时间轮/IO 池/真实驱动）骨架已编译，生产级压测待做；P3（批量 COPY、Redis 缓存/限流、WS 独立进程）尚未实现。下表为原路线，状态以 12 号 §9 为准。
+
 | 阶段                     | 内容                                                                                                                                                     | 验收标准                                                                            | 风险控制                                  |
 |--------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|-------------------------------------------|
-| **P0 契约先行**          | 按 05 号写 `../../pyproject.toml` + `collector-cpp/CMakeLists.txt` + `python/industrial_collector/` 骨架（空 `_core` 仅 `health()`）；同步落实 `stub.py` | FastAPI 全链路可跑通（下发 + 快照拉取 + 事件消费），不依赖真实设备                  | stub 与真扩展同接口同校验，后续替换零改动 |
+| **P0 契约先行**          | 按 05 号写 `../../pyproject.toml` + `collector-cpp/CMakeLists.txt` + `collector-python/industrial_collector/` 骨架（空 `_core` 仅 `health()`）；同步落实 `stub.py` | FastAPI 全链路可跑通（下发 + 快照拉取 + 事件消费），不依赖真实设备                  | stub 与真扩展同接口同校验，后续替换零改动 |
 | **P1 静态+运行动态配置** | 01/02 号文档全部表的 FastAPI CRUD + 校验 + 级联展开 + `/{id}/plan` 预览                                                                                  | 与前端联调通过（响应体符合 03 号契约）                                              | stub 驱动全链路跑通，不依赖真实设备       |
 | **P2 采集扩展重构**      | 驱动迁入 `../../collector-cpp`，实现时间轮 + IO 线程池 + 无锁快照缓冲 + `apply_plan`                                                                     | 单机 300 台模拟设备（可写 Modbus slave 模拟器）稳定采集 24h，无线程暴涨、无内存增长 | 用模拟器压测，不接生产设备                |
 | **P3 写入与报警优化**    | 批量 COPY、内存态报警、WS 独立进程 + Redis 广播                                                                                                          | 5000 点/秒持续压测，PG CPU < 40%，端到端延迟 p99 < 1s                               | 压测环境独立库，不影响生产                |
@@ -1292,7 +1304,7 @@ FastAPI 版是唯一在跑的后端，数据库初始化时：
 
 1. **以 Alembic 基线为准**：执行 `alembic upgrade head` 一次性建齐全部表，不再依赖旧版 SQL 脚本。
 2. `time_series_data` 主键 `(ts, point_id)` 加 `ON CONFLICT DO NOTHING`，防止重复采样写入报错。
-3. `using_devices` / `using_points` 由扩展快照写入，FastAPI 不直接写这两张表。
+3. `using_devices` / `using_points` 由 **FastAPI 编排器在计划下发后投影写入**（`CollectorOrchestrator._sync_runtime_snapshot`），扩展不直接写这两张表；扩展只通过 `snapshot_since` 回吐采样，由 `SamplePump` 批量写入 `time_series_data`。
 
 ### 11.4 待决问题（需业务方确认）
 
@@ -1346,7 +1358,8 @@ FastAPI 版是唯一在跑的后端，数据库初始化时：
 - [07-Vue3前端架构与多端交付契约](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/07-Vue3前端架构与多端交付契约.md) —— 前端
 - [08-开发调试环境](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/08-开发调试环境（欧拉VMware服务方案）.md) —— **开发与部署架构（第十章的上位文档）**
 - [09-openEuler环境准备实操指南](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/09-openEuler环境准备实操指南.md) —— 环境落地步骤
-- [10-openEuler本地ISO源实战指南](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/10-openEuler本地ISO源实战指南.md) —— 内网源配置
+- [12-文件代码结构及代码说明](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/12-文件代码结构及代码说明.md) —— **与当前代码逐文件对齐的权威走读（新开发者首选）**
+- [10-openEuler本地ISO源实战指南](file:///E:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP/docs/1-框架文档/10-openEuler本地ISO源实战指南.md) —— ⚠️ 已废弃，仅历史参考
 
 **旧工程 `01-IBMCP` 外部台账（不在本仓库，仅作溯源，不可直接打开）**
 

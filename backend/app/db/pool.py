@@ -21,7 +21,11 @@ class DatabasePool:
             min_size=settings.pg_pool_min,
             max_size=settings.pg_pool_max,
         )
-        logger.info("DatabasePool initialized", min=settings.pg_pool_min, max=settings.pg_pool_max)
+        logger.info(
+            "DatabasePool initialized min=%s max=%s",
+            settings.pg_pool_min,
+            settings.pg_pool_max,
+        )
 
     async def close(self) -> None:
         if self._pool is not None:

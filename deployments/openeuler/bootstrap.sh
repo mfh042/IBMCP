@@ -155,7 +155,7 @@ docker exec ibmcp-redis redis-cli ping | grep -q PONG \
     && echo "✅ Redis 容器就绪" \
     || { echo "❌ Redis 容器未就绪"; exit 1; }
 
-echo "✅ Node-RED 容器已启动（http://192.168.80.134:1880）"
+echo "✅ Node-RED 容器已启动（http://192.168.80.135:1880）"
 
 # --- 5. Nginx 配置（裸机，反代 FastAPI + 托管前端静态文件）---
 echo ""
@@ -231,13 +231,13 @@ echo "   5. 前端部署（在 Windows 侧构建，不在欧拉执行 npm）："
 echo "      # —— Windows PowerShell ——"
 echo "      cd E:\\999-Dev\\01-IBMCP-黑盒管控系统\\02-IBMCP\\frontend"
 echo "      npm install && npm run build"
-echo "      scp -r dist\\* meng@192.168.80.134:$PROJECT_ROOT/frontend-dist/"
+echo "      scp -r dist\\* meng@192.168.80.135:$PROJECT_ROOT/frontend-dist/"
 echo "      # —— 回到欧拉 ——"
 echo "      chmod -R o+rX $PROJECT_ROOT/frontend-dist && nginx -s reload"
 echo "   6. uvicorn app.main:app --host 0.0.0.0 --port 8000"
 echo ""
 echo " 验证："
-echo "   http://192.168.80.134         → 前端（Nginx 静态）"
-echo "   http://192.168.80.134/api/v1/docs → FastAPI OpenAPI（Nginx 反代）"
-echo "   http://192.168.80.134:1880    → Node-RED"
+echo "   http://192.168.80.135         → 前端（Nginx 静态）"
+echo "   http://192.168.80.135/api/v1/docs → FastAPI OpenAPI（Nginx 反代）"
+echo "   http://192.168.80.135:1880    → Node-RED"
 echo "============================================================"

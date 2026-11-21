@@ -6,6 +6,7 @@
       <sourceFolder url="file://$MODULE_DIR$/backend/app" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/python" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/collector-python" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
     </content>
     <orderEntry type="jdk" jdkName="E:\999-Dev\01-IBMCP-黑盒管控系统\02-IBMCP\.venv" jdkType="Python SDK" />

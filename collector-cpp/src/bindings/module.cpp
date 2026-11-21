@@ -26,43 +26,43 @@ static void _attach_common_attrs(py::object cls) {
 }
 
 template <class F>
-static auto guarded(const char* stage, F&& f) {
+static decltype(auto) guarded(const char* stage, F&& f) {
     try {
         return f();
     } catch (const ProtocolNotSupported& e) {
         py::set_error(PyExc_TypeError, "");
         py::object exc = py::module_::import("industrial_collector._core").attr("ProtocolNotSupported");
-        py::err_clear();
+        PyErr_Clear();
         throw _make_exception_instance(exc, e);
     } catch (const InvalidConnection& e) {
         py::set_error(PyExc_TypeError, "");
         py::object exc = py::module_::import("industrial_collector._core").attr("InvalidConnection");
-        py::err_clear();
+        PyErr_Clear();
         throw _make_exception_instance(exc, e);
     } catch (const PlanRevisionConflict& e) {
         py::set_error(PyExc_TypeError, "");
         py::object exc = py::module_::import("industrial_collector._core").attr("PlanRevisionConflict");
-        py::err_clear();
+        PyErr_Clear();
         throw _make_exception_instance(exc, e);
     } catch (const NotInitialized& e) {
         py::set_error(PyExc_TypeError, "");
         py::object exc = py::module_::import("industrial_collector._core").attr("NotInitialized");
-        py::err_clear();
+        PyErr_Clear();
         throw _make_exception_instance(exc, e);
     } catch (const ControlQueueFull& e) {
         py::set_error(PyExc_TypeError, "");
         py::object exc = py::module_::import("industrial_collector._core").attr("ControlQueueFull");
-        py::err_clear();
+        PyErr_Clear();
         throw _make_exception_instance(exc, e);
     } catch (const DeviceNotInPlan& e) {
         py::set_error(PyExc_TypeError, "");
         py::object exc = py::module_::import("industrial_collector._core").attr("DeviceNotInPlan");
-        py::err_clear();
+        PyErr_Clear();
         throw _make_exception_instance(exc, e);
     } catch (const CollectorError& e) {
         py::set_error(PyExc_TypeError, "");
         py::object exc = py::module_::import("industrial_collector._core").attr("CollectorError");
-        py::err_clear();
+        PyErr_Clear();
         throw _make_exception_instance(exc, e);
     } catch (const std::exception& e) {
         throw std::runtime_error(e.what());
@@ -74,17 +74,17 @@ PYBIND11_MODULE(_core, m) {
 
     py::object base_exc = py::register_exception<CollectorError>(m, "CollectorError");
     _attach_common_attrs(base_exc);
-    py::object exc1 = py::register_exception<ProtocolNotSupported>(m, "ProtocolNotSupported", py::base<CollectorError>());
+    py::object exc1 = py::register_exception<ProtocolNotSupported>(m, "ProtocolNotSupported", base_exc);
     _attach_common_attrs(exc1);
-    py::object exc2 = py::register_exception<InvalidConnection>(m, "InvalidConnection", py::base<CollectorError>());
+    py::object exc2 = py::register_exception<InvalidConnection>(m, "InvalidConnection", base_exc);
     _attach_common_attrs(exc2);
-    py::object exc3 = py::register_exception<PlanRevisionConflict>(m, "PlanRevisionConflict", py::base<CollectorError>());
+    py::object exc3 = py::register_exception<PlanRevisionConflict>(m, "PlanRevisionConflict", base_exc);
     _attach_common_attrs(exc3);
-    py::object exc4 = py::register_exception<NotInitialized>(m, "NotInitialized", py::base<CollectorError>());
+    py::object exc4 = py::register_exception<NotInitialized>(m, "NotInitialized", base_exc);
     _attach_common_attrs(exc4);
-    py::object exc5 = py::register_exception<ControlQueueFull>(m, "ControlQueueFull", py::base<CollectorError>());
+    py::object exc5 = py::register_exception<ControlQueueFull>(m, "ControlQueueFull", base_exc);
     _attach_common_attrs(exc5);
-    py::object exc6 = py::register_exception<DeviceNotInPlan>(m, "DeviceNotInPlan", py::base<CollectorError>());
+    py::object exc6 = py::register_exception<DeviceNotInPlan>(m, "DeviceNotInPlan", base_exc);
     _attach_common_attrs(exc6);
 
     py::class_<Collector, std::unique_ptr<Collector, py::nodelete>>(m, "Collector")
