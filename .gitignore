@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.python-version
+
+# Testing / linting caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+collector-cpp/build/
+
+# Node / frontend
+node_modules/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Downloaded source archives
+*.tar.gz
+*.tar.xz
+*.zip
+
+# Logs / runtime data
+*.log
+logs/
+data/
+*.sqlite
+*.db
