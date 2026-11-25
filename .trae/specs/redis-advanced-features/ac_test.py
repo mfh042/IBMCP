@@ -94,6 +94,28 @@ check("C1c runtime overview cached", redis("EXISTS","cache:runtime:devices:overv
 http("GET","/api/v1/config/routes?config_id=0",token=tf)
 check("C1d config routes list cached", redis("EXISTS","cache:config:routes:cfg:0")=="1")
 
+# C2e: device 写后失效 route expand 缓存（review Finding 1 修复，防回归）
+_,rb=http("GET","/api/v1/config/routes",token=tf)
+ritems=json.loads(rb).get("data",{}).get("items",[])
+if ritems:
+    rid=ritems[0]["id"]; ekey="cache:config:routes:%d:expand"%rid
+    http("GET","/api/v1/config/routes/%d/expand"%rid,token=tf)
+    check("C2e expand cached before device write", redis("EXISTS",ekey)=="1", "key="+ekey)
+    _,db=http("GET","/api/v1/config/devices?route_id=%d"%rid,token=tf)
+    ditems=json.loads(db).get("data",{}).get("items",[])
+    if ditems:
+        bid=ditems[0]["id"]; b=dict(ditems[0])
+        for f in ("id","created_at","updated_at"): b.pop(f,None)
+        st,ub=http("PUT","/api/v1/config/devices/%d"%bid,token=tf,body=b)
+        check("C2e device update ok", body_code(ub)==0, "http="+str(st))
+        check("C2e expand invalidated after device write", redis("EXISTS",ekey)=="0")
+        http("GET","/api/v1/config/routes/%d/expand"%rid,token=tf)
+        check("C2e expand repopulated after re-GET", redis("EXISTS",ekey)=="1")
+    else:
+        print("SKIP: C2e route has no device bindings")
+else:
+    print("SKIP: C2e no routes in env")
+
 print("=== SUMMARY ===")
 p=sum(1 for _,c in res if c); print("PASSED %d/%d"%(p,len(res)))
 sys.exit(0 if p==len(res) else 1)

@@ -13,7 +13,7 @@
 | 数据库访问 | asyncpg（异步连接池） | Drogon `DbClient`（libpq，异步 + C++20 协程） |
 | ORM / 校验 | SQLAlchemy 迁移 + Pydantic | Drogon Model（`drogon_ctl create model`）+ nlohmann/json |
 | 鉴权 | PyJWT + argon2-cffi | jwt-cpp（header-only）+ libargon2 |
-| 缓存/会话 | redis-py | Drogon `RedisClient`（hiredis） |
+| 缓存/会话/推送 | redis-py（预留未用） | Drogon `RedisClient`（hiredis）：响应缓存 + Token 登出黑名单 + WS Pub/Sub 推送骨干（见 [09](./09-Redis缓存与实时推送.md)） |
 | 迁移工具 | Alembic | 原生 SQL 脚本 + 版本表迁移器 |
 | 测试 | pytest | GoogleTest（与 backend/collector 现有测试统一） |
 | 构建 | pybind11 CMake + uv/venv | 纯 CMake（`find_package(Drogon)`） |
@@ -32,10 +32,15 @@
 | 04 | [04-采集器融合与调度](./04-采集器融合与调度.md) | backend/collector 静态库融合、事件回调链路、SamplePump C++ 化 |
 | 05 | [05-openEuler 构建与部署](./05-openEuler构建与部署.md) | Windows11 开发→欧拉部署工作流、`/home/meng/ibmbuild` 布局、Drogon（静态）+ 驱动库、`env.sh`/ldconfig、CMake 构建到 `dist/`、Docker、Nginx、systemd、部署脚本 |
 | 06 | [06-迁移清单与差异对照](./06-迁移清单与差异对照.md) | 文件删除清单、模块迁移对照表、风险与注意事项 |
+| 07 | [07-跨机器迁移与离线交付方案](./07-跨机器迁移与离线交付方案.md) | 新机器交付、离线 bundle 还原、PG / Redis / Node-RED 数据迁移 |
+| 08 | [08-CLion 远程开发配置](./08-CLion远程开发配置.md) | CLion 远程工具链 / gdbserver 调试配置 |
+| 09 | [09-Redis 缓存与实时推送](./09-Redis缓存与实时推送.md) | Redis 三项落地能力：响应缓存（Cache-Aside）、Token 黑名单（登出即失效）、WS Pub/Sub 推送骨干，含 fail-open 与运维观测 |
 
 ## 阅读顺序建议
 
 1. 先读 `01` 建立整体认知；
 2. 实施时按 `02 → 03 → 04` 顺序编码；
 3. 联调与上线参考 `05`；
-4. `06` 作为迁移过程的核对清单。
+4. `06` 作为迁移过程的核对清单；
+5. 跨机器交付 / 离线还原见 `07`，CLion 远程调试见 `08`；
+6. Redis 缓存 / 黑名单 / 推送的实现与运维见 `09`。

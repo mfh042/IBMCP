@@ -71,9 +71,9 @@
             ▼
    ┌───────────────────────────────────────┬──────────────────────────────────┐
    │  PostgreSQL 15（Docker 容器）          │  Redis 7（Docker 容器）          │
-   │  配置 / 时序（COPY 专用连接）           │  预留，v1 未启用；规划用途：      │
-   │  / 报警 / 审计                         │  JWT 登出黑名单 / 跨实例缓存 /   │
-   │                                       │  WS 跨进程广播（见 §6.6）         │
+   │  配置 / 时序（COPY 专用连接）           │  ① 响应缓存（Cache-Aside）       │
+   │  / 报警 / 审计                         │  ② Token 黑名单（登出即失效）    │
+   │                                       │  ③ WS Pub/Sub 推送骨干（见 §6.6）│
    └───────────────────────────────────────┴──────────────────────────────────┘
             ▲
    ┌──────────────────────────────────────────────────────────────────────────┐
@@ -85,7 +85,7 @@
 > - **两条数据通路**：通路 A 是 collector 事件回调（低频、状态/命令类），通路 B 是 200ms 采样泵（高频、数据类）。报警判定属于通路 B（SamplePump 内的 ActiveAlarmTracker），不在 EventDispatcher 上。
 > - **读写连接池分离**：UI 查询走 `default` 池，采集侧写入走 `write` 池，避免采集写风暴拖慢用户面查询。
 > - **COPY 专用连接**：`time_series_data` 批量写入走独立 libpq 连接，与 Drogon 两个连接池都隔离，不阻塞池内连接（见 02 §6）。
-> - **Redis 保留为预留组件**：当前 v1 未接入，不画入进程内调用链；仅在出现主动登出 / 多实例水平扩展等真实需求时启用。
+> - **Redis 已接入核心链路**：承载响应缓存（Cache-Aside）、Token 黑名单（登出即失效）、WS Pub/Sub 推送骨干；进程内通过 `RedisClient` 访问，故障时 fail-open（缓存回源 / 鉴权放行 / 推送仅记日志），不阻塞 HTTP（见 §6.6 与 09）。
 > - **热路径不碰 WS send**：采样泵 / 事件分发线程只把消息放进 WsHub 待发队列，真正发送在 Drogon IO 线程完成，慢客户端不拖累 200ms 泵。
 
 ## 3. 组件映射（FastAPI → Drogon）
@@ -102,7 +102,7 @@
 | `Depends(get_current_user)` | 全局 `registerPostRoutingAdvice`（`main.cpp`） | 解析 `Authorization: Bearer`，校验后写入 `req->attributes()` 的 `user`；`AuthFilter` 类保留但不挂路由（Drogon 1.9.5 不允许手动注册 `HttpFilter` 子类） |
 | PyJWT | jwt-cpp（header-only，`jwt-cpp/jwt.h`） | 签发/校验 HS256 |
 | argon2-cffi | libargon2（`argon2.h`） | 密码哈希 |
-| redis-py | Drogon `RedisClient`（封装 hiredis） | 会话黑名单、缓存 |
+| redis-py | Drogon `RedisClient`（封装 hiredis） | 响应缓存 / Token 登出黑名单 / WS Pub/Sub 推送骨干（详见 09） |
 | structlog | spdlog（Drogon 自带，或独立引入） | 结构化日志 |
 | `ResultEnvelopeMiddleware` | Drogon 后置 Advice / 响应拦截器 | 统一 `{code, message, data}` 包膜，HTTP 恒 200 |
 | `CORSMiddleware` | `app().enableCORS(...)` 或自定义 Filter | 开发期放开 |
@@ -149,12 +149,12 @@
 │   ├── cmake/                  # 第三方 Find 模块 / FetchContent
 │   ├── include/
 │   │   └── ibmcp/
-│   │       ├── core/           # Config, Result, Errors, JwtUtil, PasswordUtil
-│   │       ├── db/             # DbClient 封装、迁移器
+│   │       ├── core/           # Config, Result, Errors, JwtUtil, PasswordUtil, Cache, AuthRedis
+│   │       ├── db/             # DbClient 封装、迁移器、Redis 客户端封装
 │   │       ├── filter/         # AuthFilter, CorsFilter, EnvelopeAdvice
 │   │       ├── controller/     # HttpControllers, WsController
 │   │       ├── service/        # 业务 Service
-│   │       ├── ws/             # WsHub
+│   │       ├── ws/             # WsHub（Redis Pub/Sub 推送骨干）
 │   │       └── dto/            # 请求/响应 DTO（nlohmann json 序列化）
 │   ├── src/                    # 对应实现
 │   ├── models/                 # drogon_ctl 生成的 ORM Model（或手写）
@@ -211,16 +211,18 @@
 - 业务参数（JWT 密钥、过期时间、CORS、采样间隔）→ 自定义 `Config` 类从 `config.json` 的自定义段或环境变量读取；
 - 敏感信息（密码、密钥）支持环境变量覆盖，便于容器化与运维。
 
-### 6.6 Redis 的定位（保留，但 v1 未启用）
+### 6.6 Redis 的定位（已启用，承载三项核心能力）
 
-Redis 保留在部署拓扑中，但当前 v1 **不接入**，不画入进程内调用链。原因：当前实际代码中 JWT 无状态（无服务端会话）、点位缓存是进程内 dict、WsHub 是纯内存连接表，Redis 尚未承载任何真实功能；提前接入只会增加一个故障域与运维负担。
+Redis 已从「预留组件」落地为后端核心运行时依赖，承载三项能力（详见 [09](file:///e:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP-drogon/docs/0-Drogon/09-Redis缓存与实时推送.md)）：
 
-启用时机与规划用途（按需，出现对应真实需求时再接）：
-- **JWT 登出黑名单**：需要支持「主动失效已签发 token」时，用 Redis 存已登出 token 的 jti 黑名单，AuthFilter 校验时比对；
-- **跨实例水平扩展**：若 ibmcp 部署为多实例，WsHub 的连接表、ActiveAlarmTracker 的活动报警态需跨进程共享，改用 Redis pub/sub（WS 广播）+ Redis Hash（活动报警）；
-- **UI 热点查询缓存**：若字典 / 配置类查询成为瓶颈，再加 Redis 缓存层。
+1. **响应数据缓存**（Cache-Aside）：字典 / 配置 / 概览 / 最新值等读多写少接口，读时回填、写时失效，TTL 5–600s 分级。命中直接返回 Redis 序列化 JSON，未命中回源 PG 并回写。
+2. **Token 黑名单 / 会话失效**：每条签发的 JWT 带唯一 `jti`；`POST /api/v1/auth/logout` 将 `jti` 写入 `auth:blacklist:{jti}` 并设 TTL = 剩余有效期；全局 Post-Routing Advice 异步查黑名单，命中即拒（body `code=401`）。
+3. **WS 实时推送骨干**（Pub/Sub）：`WsHub` 由纯进程内广播改为 `PUBLISH ibmcp:ws:<topic>` + `psubscribe ibmcp:ws:*`，广播与投递解耦，为多实例水平扩展铺路；`sample_pump` 调用点零改动，前端消息格式兼容。
 
-v1 阶段，`config.json` 可不声明 redis client，部署侧 Redis 容器可启动但不被连接（保留以备后续启用），或直接不启动——以实际运维选择为准。
+关键设计：
+- **fail-open**：Redis 不可用时不崩、不 500——缓存回源、鉴权放行（仅丧失登出即失效）、推送仅记日志；
+- **有界超时**：`config.json` 设 `redis_clients[].timeout = 1.0`（秒），Redis 宕机时命令 ≤1s 失败触发 fail-open，避免请求挂起；
+- **`config.json` 必须声明 `default` redis client**，部署侧 Redis 容器由 `docker compose up -d` 拉起（`deploy.sh --full` 含 Redis）。
 
 ### 6.7 单进程的崩溃域与边界保护
 
@@ -242,5 +244,8 @@ v1 阶段，`config.json` 可不声明 redis client，部署侧 Redis 容器可�
 | 扩展事件消费 | `EventDispatcher`（asyncio 队列） | 同名 C++ 类（线程安全队列） | 迁移 |
 | JWT 鉴权 / 密码 | PyJWT + argon2 | jwt-cpp + libargon2 | 替换 |
 | 审计日志 | `AuditService` | 同名 C++ 类 | 迁移 |
+| 响应数据缓存 | （无 / 进程内缓存） | `ibmcp::cache`（Redis Cache-Aside，TTL 5–600s，写时失效） | 新增 |
+| Token 登出即失效 | （无，JWT 仅靠过期） | jti 黑名单 `auth:blacklist:{jti}`，全局 Advice 异步校验，fail-open | 新增 |
+| WS 跨实例推送 | WsHub 进程内广播 | WsHub + Redis Pub/Sub（`ibmcp:ws:*`），广播与投递解耦 | 增强 |
 | 字典 / 配置 / 数据 / 报警 / 运行时查询 | 各路由 | 对应 HttpController | 迁移 |
 | OpenAPI 文档 | FastAPI 自动 | Drogon 不内置；可选 Swagger 静态文件 | 简化 |

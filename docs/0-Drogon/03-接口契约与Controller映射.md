@@ -101,6 +101,7 @@ Task<HttpResponsePtr> RuntimeDeviceController::control(
 |------|------|------|--------|--------|
 | POST | `/api/v1/auth/login` | — | `auth.py:69` | `AuthController::login` |
 | POST | `/api/v1/auth/refresh` | — | `auth.py:94` | `AuthController::refresh` |
+| POST | `/api/v1/auth/logout` | ✓ | — | `AuthController::logout`（jti 写入 Redis 黑名单，登出即失效，详见 09 §5） |
 | GET | `/api/v1/auth/verify` | ✓ | `auth.py:113` | `AuthController::verify` |
 | GET | `/api/v1/auth/me` | ✓ | `auth.py:123` | `AuthController::me` |
 | GET | `/api/v1/auth/users` | ✓ | `auth.py:138` | `AuthController::listUsers` |
@@ -297,8 +298,10 @@ public:
 逻辑（移植自旧 `backend/app/core/security.py`）：
 1. 取 `Authorization: Bearer <token>` 头；缺失 → `adviceCb(error(401, "missing bearer token"))` 短路；
 2. `ibmcp::jwt::verifyToken(token)` 校验签名（密钥 `APP_SECRET_KEY`，HS256）与过期；失败 → 401；
-3. （预留）查 Redis 黑名单（登出/改密后失效）；
+3. 取载荷 `jti`：为空则放行（兼容存量旧 token 至自然过期）；非空则 `auth::isBlacklisted(jti, cb)` **异步**查 Redis 黑名单——命中 → `adviceCb(error(401, "token revoked"))` 短路，未命中 → 继续；Redis 异常 / 超时走 fail-open 放行（详见 09 §5）；
 4. 通过则把 JWT 载荷写入 `req->attributes()` 的 `"user"` 属性（`Json::Value`），调用 `chainCb()` 放行进入 Handler。
+
+> 注意：本 API 所有业务响应 **HTTP 恒 200**，状态在 body `code`（`result::make` 恒设 `k200OK`）。故「token 已失效 / 缺失 / 非法」均为 HTTP 200 + body `code=401`（如 `{"code":401,"message":"token revoked"}`），前端与测试须判 body `code` 而非 HTTP 状态。
 
 ```cpp
 // main.cpp 中的关键写入

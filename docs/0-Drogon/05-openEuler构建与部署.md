@@ -202,6 +202,10 @@ ldconfig -p | grep -E 'libmodbus|libopen62541'
     { "name": "write",   "rdbms": "postgresql", "host": "127.0.0.1", "port": 5432,
       "dbname": "ibmcp", "user": "ibmcp", "passwd": "ibmcp", "number_of_connections": 5 }
   ],
+  "redis_clients": [
+    { "name": "default", "host": "127.0.0.1", "port": 6379, "passwd": "ibmcp2026",
+      "db": 0, "number_of_connections": 5, "timeout": 1.0 }
+  ],
   "custom_config": {
     "app_secret_key": "dev-secret-change-me",
     "pg_dsn": "postgresql://ibmcp:ibmcp@127.0.0.1:5432/ibmcp",
@@ -212,7 +216,9 @@ ldconfig -p | grep -E 'libmodbus|libopen62541'
 }
 ```
 
-> 生产环境 `app_secret_key`、DB 密码应从环境变量注入或用独立 `config.json`（权限 600）覆盖；当前 `main.cpp` 不读环境变量，敏感项直接改 `dist/config.json`。
+> 生产环境 `app_secret_key`、DB / Redis 密码应从环境变量注入或用独立 `config.json`（权限 600）覆盖；当前 `main.cpp` 不读环境变量，敏感项直接改 `dist/config.json`。
+>
+> **`redis_clients[].timeout = 1.0`（秒）勿改为 0 或负数**：Drogon 中 0 / 负值 = 命令无界超时，Redis 宕机时缓存读 / 黑名单查询会挂起数十秒才失败。设为 1.0 保证 ≤1s 触发 fail-open（缓存回源、鉴权放行、推送仅记日志），HTTP 服务始终可用，详见 09 §2 / §8。
 
 手动试跑：
 
@@ -472,6 +478,10 @@ docker compose -f /home/meng/ibmcp/deployments/openeuler/docker-compose.yml ps
 curl -s http://127.0.0.1:8000/api/v1/ping
 # → {"code":0,"message":"ok",...}
 
+# 3b. Redis 探针（应返回 PONG；缓存 / 黑名单 / WS 推送均依赖它）
+curl -s http://127.0.0.1:8000/api/v1/redis/ping
+# → {"code":0,"data":{"ping":"PONG","dbsize":"N",...}}
+
 # 4. 登录拿 token
 TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/v1/auth/login \
   -H 'Content-Type: application/json' \
@@ -500,6 +510,8 @@ wscat -c "ws://192.168.80.136/ws/push?token=$TOKEN"
 | `error while loading shared libraries` | `ldd dist/bin/ibmcp_server \| grep not found`；缺驱动库 → 跑 `sudo bash build_drivers.sh && sudo ldconfig`；缺系统库 → `dnf provides <库>` |
 | systemd 反复重启 | 多半是旧 FastAPI 单元残留（引用不存在的 `.env`/`uvicorn`）→ `bootstrap.sh` 会清理，或手动 `sudo systemctl stop ibmcp-api && sudo rm /etc/systemd/system/ibmcp-api.service && sudo systemctl daemon-reload` 后重跑 `deploy.sh` |
 | DB 连不上 | `docker exec ibmcp-postgres pg_isready -U ibmcp -d ibmcp`；确认 `config.json` 的 host/port；防火墙/SELinux |
+| Redis 异常 / 接口变慢 | `curl /api/v1/redis/ping` 应 PONG；`docker exec ibmcp-redis redis-cli ping`；日志搜 `cache get failed` / `auth blacklist query failed (fail-open)` / `Command execution timeout`；确认 `config.json` 的 `redis_clients[].timeout` 为正值（0/负=无界超时会挂起，见 §7 与 09） |
+| 登出后旧 token 仍可用 | 查黑名单键：`docker exec ibmcp-redis redis-cli EXISTS auth:blacklist:<jti>`；确认 Redis 可达且 timeout 非无界；注意本 API 鉴权失败是 HTTP 200 + body `code=401`（非 HTTP 401） |
 | 收不到采样 | `/api/v1/collector/health` 看 `point_count`；检查配置是否已 activate；`dist/logs/ibmcp*.log` |
 | WS 连不上 | nginx `proxy_read_timeout` 与 Upgrade 头；确认 token 传参方式；Drogon WS 路径为 `/ws/push` 与 `/api/v1/ws/collect` |
 | `meng` 不能直接调 docker | `meng` 刚加入 docker 组，需**重新登录**才免 sudo；临时用 `sudo docker` |

@@ -49,7 +49,7 @@
 
 ## 审查结论（由审查人填写）
 
-- **Verdict**: **PASS-with-minor**（所有已声明 AC 在代码与端到端证据上均通过；发现 1 处与 GOAL"写后不长期脏读"冲突的脏读缺口，不命中现有 AC 但建议修复，另含若干 minor/nit）。
+- **Verdict**: **PASS**（审查发现的 1 处 major + 2 处 minor 已全部修复并在 openEuler 重新编译运行验证通过，详见文末「修复决议」；所有已声明 AC 均通过，无回归）。
 
 ### Findings
 
@@ -104,3 +104,14 @@
 | AC-X1 全量回归不破坏现有接口 | PASS | Task 9：24/24 无 5xx，核心接口响应结构不变；`sample_pump.cpp` 调用点零改动。 |
 
 > 端到端证据来自 tasks.md Task 9（openEuler 192.168.80.136 真实部署运行）与 [ac_test.py](file:///e:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP-drogon/.trae/specs/redis-advanced-features/ac_test.py)；本审查在开发端只读核对源码逻辑，未重新执行部署测试。
+
+## 修复决议（Review 后）
+
+审查后对 Findings 1/2/3 全部修复，并在 openEuler（192.168.80.136）重新 `build.sh` 编译、`systemctl restart`、复跑 ac_test.py 验证；Finding 4 接受为既有降级语义。
+
+- **Finding 1 [major] — 已修复并验证**：在 [config_device_controller.cpp](file:///e:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP-drogon/backend/src/controller/config_device_controller.cpp) 与 [config_point_controller.cpp](file:///e:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP-drogon/backend/src/controller/config_point_controller.cpp) 的 create/update/remove 成功后追加 `co_await cache::invalidateMatch("cache:config:routes*")`（覆盖 routes list + expand）。build 0 error；复跑 ac_test.py 无回归；新增 C2e 断言 + 独立脚本实测：device 写前 `cache:config:routes:1:expand` EXISTS=1 → 写后 =0（失效）→ 重 GET =1（重建），`EXPAND_FRESHNESS: PASS`。
+- **Finding 2 [minor] — 已修复**：[auth_controller.cpp](file:///e:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP-drogon/backend/src/controller/auth_controller.cpp) `logout` 拉黑 refresh_token 前补 `(*rp).get("scope","") == "refresh"` 校验（与 refresh 端点一致）；编译通过、ac_test.py 无回归。
+- **Finding 3 [minor] — 已修复并验证**：[alarm_controller.cpp](file:///e:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP-drogon/backend/src/controller/alarm_controller.cpp) `ack`/`recover` 成功后 `co_await cache::invalidateMatch("cache:runtime:devices*")`（失效含 `active_alarm_count` 的 overview）。实测：overview 缓存 ack 前 EXISTS=1 → `PUT /api/v1/alarms/5/ack`（http 200 code 0）后 =0 → 重 GET =1。
+- **Finding 4 [nit] — 接受**：`WsHub::init` 启动失败不重试符合 spec 降级语义（FR-P5：订阅断连由 Drogon/hiredis 自动重连；broadcast 失败仅记日志），非崩溃、不阻塞 HTTP 服务。后续可文档化。
+
+**最终 Verdict：PASS**。全部 AC 通过，审查发现问题已修复验证，无回归。
