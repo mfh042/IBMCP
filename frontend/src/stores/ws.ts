@@ -4,8 +4,10 @@ import {wsService} from '@/comm/ws'
 import type {ControlResult, RealTimePointData} from '@/types/api'
 
 export const useWsStore = defineStore('ws', () => {
+    // 键：采集计划点位主键（running_device_collection.id = using_points.using_point_id = WS data 帧 point_id）
     const realTimeData = reactive<Record<number, RealTimePointData>>({})
-    const deviceStatus = reactive<Record<number, number>>({})
+    // 键：device_code（字符串），后端运行时无数字主键
+    const deviceStatus = reactive<Record<string, number>>({})
     const listenedPoints = reactive<Set<number>>(new Set())
     const dataSubscribed = ref(false)
     const controlSubscribed = ref(false)
@@ -21,15 +23,22 @@ export const useWsStore = defineStore('ws', () => {
         connectionTick.value++
     })
 
+    // 后端 data 帧：{"type":"data","ts":<int>,"count":<int>,"samples":[{device_code,point_id,value,quality}...]}
+    // WS 帧不经过 axios 拦截器，字段保持 snake_case。
     function onDataPayload(payload: any) {
         if (!payload || payload.type !== 'data') return
-        const pointId = Number(payload.pointId)
-        if (!Number.isFinite(pointId)) return
-        realTimeData[pointId] = {
-            value: payload.value,
-            quality: payload.quality,
-            ts: payload.ts,
-            error: payload.error,
+        const samples = Array.isArray(payload.samples) ? payload.samples : []
+        const ts = Number(payload.ts)
+        for (const s of samples) {
+            if (!s) continue
+            const pointId = Number(s.point_id)
+            if (!Number.isFinite(pointId)) continue
+            realTimeData[pointId] = {
+                value: s.value,
+                quality: s.quality,
+                ts: Number.isFinite(ts) ? ts : undefined,
+                error: s.error,
+            }
         }
     }
 
@@ -52,8 +61,8 @@ export const useWsStore = defineStore('ws', () => {
     function subscribeDevice() {
         wsService.subscribe('device', (payload) => {
             if (!payload || payload.type !== 'device_status') return
-            const deviceId = Number(payload.deviceId)
-            if (Number.isFinite(deviceId)) deviceStatus[deviceId] = Number(payload.status)
+            const code = payload.device_code
+            if (typeof code === 'string' && code) deviceStatus[code] = Number(payload.status)
         })
     }
 
@@ -63,7 +72,7 @@ export const useWsStore = defineStore('ws', () => {
         wsService.subscribe('control', (payload) => {
             if (!payload || payload.type !== 'control_finished') return
             lastControlResult.value = {
-                commandId: payload.commandId,
+                commandId: payload.command_id,
                 success: !!payload.success,
                 message: payload.message ?? '',
             }

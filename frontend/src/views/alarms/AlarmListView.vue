@@ -58,7 +58,8 @@ const loading = ref(false)
 async function loadList() {
   loading.value = true
   try {
-    const params: any = {state: filterState.value}
+    const params: any = {}
+    if (filterState.value && filterState.value !== 0) params.state = filterState.value
     const data: any = await alarmsApi.list(params)
     const items = data?.items ?? data?.list ?? (Array.isArray(data) ? data : [])
     list.value = filterLevel.value ? items.filter((a: any) => a.level === filterLevel.value) : items

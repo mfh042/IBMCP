@@ -95,37 +95,16 @@ async function loadRouteSteps(routeCode: string) {
   const rb = props.wizard.routeBindings.find((r: any) => r.routeCode === routeCode)
   if (!rb) return
 
-  console.log('[Step3] loadRouteSteps for:', routeCode, 'routeId:', rb.routeId)
-
-  // If routeId is 0, try to fetch it by routeCode
-  let routeId = rb.routeId
-  if (!routeId && rb.routeCode) {
-    try {
-      console.log('[Step3] Fetching routeId by code:', rb.routeCode)
-      const routeDetail: any = await routesApi.getByCode(rb.routeCode)
-      routeId = routeDetail?.id || 0
-      rb.routeId = routeId // Update the binding
-      console.log('[Step3] Got routeId:', routeId)
-    } catch (e) {
-      console.error('[Step3] Failed to fetch route by code:', e)
-      return
-    }
-  }
-
-  if (!routeId) {
-    console.warn('[Step3] No routeId available for:', routeCode)
-    return
-  }
-
   try {
-    const detail: any = await routesApi.get(routeId)
-    const steps: any[] = detail?.steps || []
-    console.log('[Step3] Loaded steps for', routeCode, ':', steps.length)
-    // Enrich each step with binding fields
+    // 工序存放在 base_process_route_step，通过 process_steps?route_code= 查询
+    const data: any = await routesApi.stepList({routeCode, size: 999})
+    const steps: any[] = data?.items ?? (Array.isArray(data) ? data : [])
+    steps.sort((a: any, b: any) => (a.stepSeq || 0) - (b.stepSeq || 0))
+
     for (const s of steps) {
-      // Pre-fill from existing device bindings if in edit mode
+      // 编辑模式下用 stepCode 匹配已有绑定（running_route_device 无 step_id 列）
       const existingBinding = props.wizard.deviceBindings.find(
-          (d: any) => d.routeCode === routeCode && (d.stepId === s.id || d.stepCode === s.stepCode)
+          (d: any) => d.routeCode === routeCode && d.stepCode === s.stepCode
       )
       s._bindDeviceCode = existingBinding?.deviceCode || s.deviceCode || ''
       s._deviceName = existingBinding?.deviceName || ''
@@ -139,7 +118,7 @@ async function loadRouteSteps(routeCode: string) {
       s._routeCode = routeCode
       s._bindingId = existingBinding?.id || 0
 
-      // If device is pre-selected but port/protocol are empty, auto-fill from device master data
+      // 设备已选但端口/协议为空时，从设备主数据自动补全
       if (s._bindDeviceCode && (!s._portCode || !s._protocolCode)) {
         const device = devices.value.find((d: any) => d.deviceCode === s._bindDeviceCode)
         if (device) {
@@ -190,16 +169,14 @@ function onDeviceChange(step: any, code: string) {
 
 // Sync step bindings back to wizard.deviceBindings before submit
 function syncDeviceBindings() {
-  console.log('[Sync] Before sync - wizard.deviceBindings:', JSON.parse(JSON.stringify(props.wizard.deviceBindings)))
   const newBindings: any[] = []
   for (const routeCode of Object.keys(routeStepsMap.value)) {
     const steps = routeStepsMap.value[routeCode] || []
     for (const s of steps) {
-      // Preserve existing collections from wizard.deviceBindings if available
+      // 用 stepCode 匹配已有绑定，保留 Step4 已配置的 collections
       const existingBinding = props.wizard.deviceBindings.find(
-          (d: any) => d.routeCode === s._routeCode && d.stepId === s._stepId
+          (d: any) => d.routeCode === s._routeCode && d.stepCode === s._stepCode
       )
-      console.log('[Sync] Matching step:', s._stepCode, 'existing collections:', existingBinding?.collections?.length || 0)
       newBindings.push({
         id: s._bindingId || 0,
         routeCode: s._routeCode,
@@ -217,7 +194,6 @@ function syncDeviceBindings() {
     }
   }
   props.wizard.deviceBindings = newBindings
-  console.log('[Sync] After sync - wizard.deviceBindings:', JSON.parse(JSON.stringify(props.wizard.deviceBindings)))
 }
 
 // Expose sync for parent to call before submit

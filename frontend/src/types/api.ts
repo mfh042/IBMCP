@@ -79,7 +79,7 @@ export interface Point {
 }
 
 export interface Alarm {
-    id: number
+    id: number | string
     level: number
     state: number
     deviceCode?: string
@@ -188,49 +188,92 @@ export interface RouteExpandResult {
 export interface RealTimePointData {
     value: number
     quality?: string
-    ts: number
+    ts?: number
     unit?: string
     error?: string
 }
 
-export interface RealtimeDataPayload {
-    type: 'data'
-    deviceId: number
-    pointId: number
+// ===== WebSocket 帧类型（后端直接透传，字段为 snake_case，不经过 axios 拦截器）=====
+
+export interface WsDataSample {
+    device_code: string
+    point_id: number
     value: number
     quality?: string
-    ts: number
-    error?: string
 }
 
-export interface DeviceStatusPayload {
+export interface WsDataFrame {
+    type: 'data'
+    ts: number
+    count: number
+    samples: WsDataSample[]
+}
+
+export interface WsDeviceStatusFrame {
     type: 'device_status'
-    deviceId: number
+    device_code: string
     status: number
+    reason?: string | null
     ts: number
 }
 
-export type HistoryAgg = 'raw' | '1min' | '5min' | '1h' | '1d'
+export interface WsAlarmEvent {
+    device_code: string
+    point_address?: string
+    point_name?: string
+    level: number
+    state: number
+    value?: number
+    triggered_at?: number
+    recovered_at?: number
+    message?: string
+}
 
+export interface WsAlarmFrame {
+    type: 'alarm'
+    events: WsAlarmEvent[]
+}
+
+export interface WsControlFinishedFrame {
+    type: 'control_finished'
+    command_id: number
+    device_code: string
+    point_id: number
+    success: boolean
+    status?: string
+    message?: string
+    ts: number
+}
+
+export type HistoryBucket = 'raw' | '1min' | '5min' | '1h' | '1d'
+export type HistoryAgg = HistoryBucket
+export type HistoryFunc = 'avg' | 'min' | 'max' | 'sum' | 'count'
+
+// 后端 /data/history 返回经 axios 拦截器 camelCase 化后的字段
 export interface HistoryRawRow {
     pointId?: number
-    timestamp: number
+    ts: number
     value: number
     quality?: string
+    rawValue?: string | number | null
 }
 
 export interface HistoryAggRow {
-    timestamp: number
-    avg: number
-    max: number
-    min: number
-    count: number
+    pointId?: number
+    ts: number
+    value: number | null
+    sampleCount: number
+    lastQuality?: string
 }
 
 export interface HistoryResult {
-    rows: (HistoryRawRow | HistoryAggRow)[]
-    agg: HistoryAgg
     pointId: number
+    startTs: number
+    endTs: number
+    bucket: HistoryBucket
+    func: HistoryFunc
+    items: (HistoryRawRow | HistoryAggRow)[]
+    total: number
 }
 
 export interface ControlResult {
@@ -240,18 +283,49 @@ export interface ControlResult {
 }
 
 export interface CollectorStatus {
-    running: boolean
-    cycles: number
-    pointsRead: number
-    pointsFailed: number
-    pointsWritten: number
-    devicesOnline: number
-    devicesOffline: number
-    lastCycleAt: number
-    drivers: string[]
+    revision?: number
+    deviceCount?: number
+    pointCount?: number
+    queueDepth?: number
+    uptimeSec?: number
+    [key: string]: unknown
 }
 
 export interface PingResult {
-    service: string
     status: string
+    time?: number
+}
+
+// 后端 /api/v1/runtime 返回（经 axios camelCase 化）
+export interface RuntimeDevice {
+    deviceKey: string
+    protocolCode?: string
+    status: number
+    lastError?: string | null
+    pointsOk: number
+    pointsFail: number
+    snapshotAt: number
+    lastSeen?: number | null
+}
+
+// 后端 /api/v1/runtime/{device_code}/points 返回（using_points，经 camelCase 化）
+export interface RuntimePoint {
+    id: number
+    deviceCode: string
+    usingPointId?: number | null
+    itemName: string
+    address: string
+    dataType: string
+    readWrite?: string
+    unit?: string
+    scale?: number
+    offset?: number
+    collectionCycle?: number
+    cycleMs?: number
+    alarmHigh?: number
+    alarmLow?: number
+    alarmEnabled?: boolean
+    enabled?: boolean
+    createdAt?: number
+    updatedAt?: number
 }

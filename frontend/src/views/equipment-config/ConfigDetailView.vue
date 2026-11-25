@@ -32,7 +32,7 @@
       <el-divider content-position="left">工艺路线与设备绑定</el-divider>
       <div v-for="r in (treeData.routes || [])" :key="r.id" class="route-block">
         <h4>路线: {{ r.routeName || r.routeCode }} [seq={{ r.routeSeq }}]</h4>
-        <div v-for="b in (r.bindings || [])" :key="b.id" class="binding-block">
+        <div v-for="b in (r.devices || [])" :key="b.id" class="binding-block">
           <el-descriptions :column="3" border size="small">
             <el-descriptions-item label="工序">{{ b.stepName || b.stepCode }}</el-descriptions-item>
             <el-descriptions-item label="设备">{{ b.deviceName || b.deviceCode }}</el-descriptions-item>
@@ -63,7 +63,6 @@ import {computed, onMounted, ref} from 'vue'
 import {useRoute} from 'vue-router'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import {equipmentConfigApi} from '@/api/equipmentConfig'
-import {httpService} from '@/comm/http'
 
 const route = useRoute()
 const configId = computed(() => Number(route.params.id))
@@ -83,93 +82,18 @@ async function load() {
 
 async function handlePublish() {
   try {
-    await ElMessageBox.confirm('确定要发布此配置吗？发布后将同步设备和信号点到运行系统。', '发布确认', {
+    await ElMessageBox.confirm('确定要发布此配置吗？发布后将编译并下发到运行系统。', '发布确认', {
       confirmButtonText: '确定发布',
       cancelButtonText: '取消',
       type: 'success',
     })
     publishing.value = true
-
-    // First get the full config
-    const fullConfig: any = await equipmentConfigApi.get(configId.value)
-    console.log('[Publish] Full config:', fullConfig)
-
-    // Update config status
-    const updateBody = {
-      configCode: fullConfig?.configCode || '',
-      equipmentCode: fullConfig?.equipmentCode || '',
-      equipmentName: fullConfig?.equipmentName || '',
-      location: fullConfig?.location || '',
-      remark: fullConfig?.remark || '',
-      configStatus: 1,
-    }
-
-    console.log('[Publish] Updating config with body:', updateBody)
-    await httpService.put(`/api/running/configs/${configId.value}`, updateBody)
-
-    // Sync devices and points to running system
-    const expandData: any = await equipmentConfigApi.expand(configId.value)
-    console.log('[Publish] Expand data for sync:', expandData)
-
-    const routes = expandData?.routes || []
-    for (const route of routes) {
-      const bindings = route?.bindings || []
-      for (const binding of bindings) {
-        // Sync device to /api/devices
-        const deviceBody = {
-          deviceCode: binding.deviceCode,
-          deviceName: binding.deviceName,
-          protocolCode: binding.protocolCode,
-          portCode: binding.portCode,
-          deviceConnection: binding.deviceConnection || '',
-          stepCode: binding.stepCode,
-          stepName: binding.stepName,
-          routeCode: route.routeCode,
-          routeName: route.routeName,
-          enabled: 1,
-          createdBy: 'admin',
-        }
-        console.log('[Publish] Syncing device:', deviceBody)
-        await httpService.post('/api/devices', deviceBody)
-
-        // Sync collections (points) to /api/devices/${deviceId}/points
-        const collections = binding.collections || []
-        if (collections.length > 0) {
-          // Get the device ID from the response or use deviceCode to find it
-          const deviceList: any = await httpService.get('/api/devices', {params: {keyword: binding.deviceCode}})
-          const devices = deviceList?.items || deviceList?.list || deviceList || []
-          const targetDevice = devices.find((d: any) => d.deviceCode === binding.deviceCode)
-
-          if (targetDevice?.id) {
-            for (const col of collections) {
-              if (col.itemCode) {
-                const pointBody = {
-                  itemCode: col.itemCode,
-                  itemName: col.itemName,
-                  dataType: col.dataType || col._dataType || '',
-                  readWrite: col.readWrite || col._readWrite || '',
-                  collectionCycle: col.collectionCycle,
-                  addressOverride: col.addressOverride,
-                  enabled: col.enabled ? 1 : 0,
-                  remark: col.remark || '',
-                  createdBy: 'admin',
-                }
-                console.log('[Publish] Syncing point:', pointBody, 'to device:', targetDevice.id)
-                await httpService.post(`/api/devices/${targetDevice.id}/points`, pointBody)
-              }
-            }
-          }
-        }
-      }
-    }
-
-    ElMessage.success('发布成功，设备和信号点已同步')
+    await equipmentConfigApi.activate(configId.value)
+    ElMessage.success('发布成功')
     await load()
   } catch (e: any) {
-    console.error('[Publish] Error:', e)
     if (e !== 'cancel') {
-      const errorMsg = e.message || e.toString() || '发布失败'
-      ElMessage.error(errorMsg)
+      ElMessage.error(e.message || '发布失败')
     }
   } finally {
     publishing.value = false
@@ -184,9 +108,7 @@ async function handleUnpublish() {
       type: 'warning',
     })
     unpublishing.value = true
-    await httpService.put(`/api/running/configs/${configId.value}`, {
-      configStatus: 0,
-    })
+    await equipmentConfigApi.unload(configId.value)
     ElMessage.success('已撤回')
     await load()
   } catch (e: any) {

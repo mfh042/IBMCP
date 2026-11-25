@@ -1,7 +1,7 @@
 <template>
   <div class="page-card device-detail">
     <div class="page-header">
-      <h3>设备详情 #{{ deviceId }}</h3>
+      <h3>设备详情 - {{ deviceCode }}</h3>
       <el-button @click="$router.back()">返回</el-button>
     </div>
 
@@ -9,19 +9,28 @@
       <el-tab-pane label="基本信息" name="basic">
         <el-form :model="form" label-width="100px" style="max-width: 600px">
           <el-form-item label="设备编码">
-            <el-input v-model="form.deviceCode"/>
+            <el-input v-model="form.deviceCode" disabled/>
           </el-form-item>
           <el-form-item label="设备名称">
             <el-input v-model="form.deviceName"/>
           </el-form-item>
           <el-form-item label="协议">
-            <el-input v-model="form.protocolCode"/>
+            <el-input v-model="form.protocolCode" disabled/>
           </el-form-item>
-          <el-form-item label="连接参数">
-            <JsonEditor v-model="form.deviceConnectionStr" :rows="6"/>
+          <el-form-item label="端口">
+            <el-input v-model="form.portCode"/>
+          </el-form-item>
+          <el-form-item label="运行状态">
+            <el-tag :type="statusTagType(runtimeInfo.status)" effect="dark" size="small">
+              {{ statusText(runtimeInfo.status) }}
+            </el-tag>
+            <span v-if="runtimeInfo.lastError" style="margin-left: 12px; color: #ef4444; font-size: 12px">
+              {{ runtimeInfo.lastError }}
+            </span>
           </el-form-item>
           <el-form-item>
-            <el-button type="primary" @click="saveDevice">保存</el-button>
+            <el-button type="primary" @click="saveDevice">保存名称 / 端口</el-button>
+            <span class="hint">协议与连接参数来自运行计划，如需修改请在「装备配置」中调整后重新激活。</span>
           </el-form-item>
         </el-form>
       </el-tab-pane>
@@ -29,6 +38,7 @@
       <el-tab-pane label="点位配置" name="points">
         <div class="toolbar">
           <el-button disabled type="primary">新增点位</el-button>
+          <span class="hint">点位变更写入运行计划（running_device_collection），重新激活配置后投影到运行时。</span>
         </div>
         <el-table :data="points" border stripe>
           <el-table-column label="ID" prop="id" width="70"/>
@@ -78,6 +88,11 @@
       </el-tab-pane>
 
       <el-tab-pane label="命令历史" name="history">
+        <div class="toolbar">
+          <el-input-number v-model="queryCommandId" :min="1" placeholder="命令 ID" style="width: 180px"/>
+          <el-button :loading="cmdsLoading" type="primary" @click="loadCommands">查询</el-button>
+          <span class="hint">后端仅支持按命令 ID 单条查询（/api/v1/control/commands/{command_id}）</span>
+        </div>
         <el-table v-loading="cmdsLoading" :data="commands" border stripe>
           <el-table-column label="ID" prop="id" width="70"/>
           <el-table-column label="点位" min-width="140">
@@ -86,7 +101,7 @@
           <el-table-column label="值" prop="value" width="120"/>
           <el-table-column label="状态" width="100">
             <template #default="{ row }">
-              <el-tag :type="statusType(row.status)" size="small">{{ statusText(row.status) }}</el-tag>
+              <el-tag :type="cmdStatusType(row.status)" size="small">{{ cmdStatusText(row.status) }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="下发时间" width="180">
@@ -165,7 +180,7 @@
       </template>
     </el-dialog>
 
-    <ControlDialog v-model="controlVisible" :device-id="deviceId" :points="points"/>
+    <ControlDialog v-model="controlVisible" :device-code="deviceCode" :points="points"/>
   </div>
 </template>
 
@@ -177,11 +192,10 @@ import {devicesApi} from '@/api/devices'
 import {configsApi} from '@/api/configs'
 import {baseDevicesApi} from '@/api/baseDevices'
 import {formatTime} from '@/utils/time'
-import JsonEditor from '@/components/JsonEditor.vue'
 import ControlDialog from '@/components/ControlDialog.vue'
 
 const route = useRoute()
-const deviceId = computed(() => Number(route.params.id))
+const deviceCode = computed(() => String(route.params.id ?? ''))
 
 const activeTab = ref('basic')
 const form = reactive({
@@ -189,13 +203,15 @@ const form = reactive({
   deviceName: '',
   protocolCode: '',
   portCode: '',
-  deviceConnectionStr: '',
 })
+const runtimeInfo = ref<any>({})
+const masterId = ref(0)
 const points = ref<any[]>([])
 const savingPoints = ref(false)
 const commands = ref<any[]>([])
 const cmdsLoading = ref(false)
 const controlVisible = ref(false)
+const queryCommandId = ref<number | null>(null)
 const pointDialogVisible = ref(false)
 const editingPoint = ref<any>(null)
 const pointForm = reactive<any>({})
@@ -257,6 +273,24 @@ const cycleOptions = computed(() => {
   return Array.from(set).sort((a, b) => a - b)
 })
 
+// running_device_collection 可写列白名单（address -> address_override，剔除 unit/deviceId 等不存在列）
+function toCollectionPayload(src: any) {
+  const p: any = {}
+  if (src?.itemName != null) p.itemName = src.itemName
+  if (src?.itemCode != null) p.itemCode = src.itemCode
+  if (src?.address != null) p.addressOverride = src.address
+  if (src?.dataType != null) p.dataType = src.dataType
+  if (src?.readWrite != null) p.readWrite = src.readWrite
+  if (src?.scale != null) p.scale = src.scale
+  if (src?.offset != null) p.offset = src.offset
+  if (src?.collectionCycle != null) p.collectionCycle = src.collectionCycle
+  if (src?.alarmHigh != null) p.alarmHigh = src.alarmHigh
+  if (src?.alarmLow != null) p.alarmLow = src.alarmLow
+  if (src?.alarmEnabled != null) p.alarmEnabled = src.alarmEnabled
+  if (src?.enabled != null) p.enabled = src.enabled ? 1 : 0
+  return p
+}
+
 async function loadDataItems() {
   try {
     const data: any = await baseDevicesApi.itemList({page: 1, size: 9999})
@@ -279,16 +313,27 @@ function onItemCodeChange(code: string) {
 }
 
 async function load() {
+  masterId.value = 0
+  runtimeInfo.value = {}
   try {
-    const d: any = await devicesApi.get(deviceId.value)
-    form.deviceCode = d.deviceCode || ''
-    form.deviceName = d.deviceName || ''
-    form.protocolCode = d.protocolCode || ''
-    form.portCode = d.portCode || ''
-    form.deviceConnectionStr = d.deviceConnection ? JSON.stringify(d.deviceConnection, null, 2) : ''
+    const d: any = await devicesApi.get(deviceCode.value)
+    runtimeInfo.value = d || {}
+    form.deviceCode = d?.deviceKey || deviceCode.value
+    form.protocolCode = d?.protocolCode || ''
 
-    const pts: any = await configsApi.listDevicePoints(deviceId.value)
-    points.value = (pts as any)?.list ?? (Array.isArray(pts) ? pts : [])
+    try {
+      const m: any = await baseDevicesApi.deviceGetByCode(deviceCode.value)
+      if (m?.id) {
+        masterId.value = m.id
+        form.deviceName = m.deviceName || ''
+        form.portCode = m.portCode || ''
+      }
+    } catch {
+      // 静态主数据中不存在该设备编码：名称/端口不可保存
+    }
+
+    const pts: any = await configsApi.listDevicePoints(deviceCode.value)
+    points.value = pts?.items ?? pts?.list ?? (Array.isArray(pts) ? pts : [])
   } catch (e: any) {
     ElMessage.error(e.message)
   }
@@ -305,10 +350,14 @@ function onTabChange(name: any) {
 }
 
 async function loadCommands() {
+  if (!queryCommandId.value) {
+    commands.value = []
+    return
+  }
   cmdsLoading.value = true
   try {
-    const res: any = await devicesApi.commands(deviceId.value)
-    commands.value = Array.isArray(res) ? res : ((res as any)?.list ?? (res as any)?.items ?? [])
+    const res: any = await devicesApi.command(queryCommandId.value)
+    commands.value = res ? [res] : []
   } catch (e: any) {
     commands.value = []
     ElMessage.error(e.message)
@@ -318,15 +367,14 @@ async function loadCommands() {
 }
 
 async function saveDevice() {
+  if (!masterId.value) {
+    ElMessage.warning('未在静态设备主数据中找到该设备编码，无法保存名称/端口')
+    return
+  }
   try {
-    const deviceConnection = form.deviceConnectionStr ? JSON.parse(form.deviceConnectionStr) : {}
-    await configsApi.upsertDevice({
-      id: deviceId.value,
-      deviceCode: form.deviceCode,
+    await baseDevicesApi.deviceUpdate(masterId.value, {
       deviceName: form.deviceName,
-      protocolCode: form.protocolCode,
       portCode: form.portCode,
-      deviceConnection,
     })
     ElMessage.success('保存成功')
   } catch (e: any) {
@@ -373,8 +421,13 @@ async function confirmPoint() {
     ElMessage.warning('请选择或输入点位地址')
     return
   }
+  const planId = Number(pointForm.usingPointId ?? pointForm.id ?? 0)
+  if (!planId) {
+    ElMessage.warning('该点位未投影到运行计划，无法编辑；请先在装备配置中激活')
+    return
+  }
   try {
-    await configsApi.upsertPoint({...pointForm, deviceId: deviceId.value})
+    await configsApi.upsertPoint({id: planId, ...toCollectionPayload(pointForm)})
     ElMessage.success('点位保存成功')
     pointDialogVisible.value = false
     await load()
@@ -384,8 +437,13 @@ async function confirmPoint() {
 }
 
 async function removePoint(row: any) {
+  const planId = Number(row?.usingPointId ?? 0)
+  if (!planId) {
+    ElMessage.warning('该点位未投影到运行计划，无法删除')
+    return
+  }
   try {
-    await configsApi.removePoint(row.id)
+    await configsApi.removePoint(planId)
     ElMessage.success('已删除')
     await load()
   } catch (e: any) {
@@ -397,25 +455,20 @@ async function savePoints() {
   if (!points.value.length) return
   savingPoints.value = true
   try {
+    let skipped = 0
     for (const row of points.value) {
-      await configsApi.upsertPoint({
-        id: row.id,
-        deviceId: deviceId.value,
-        deviceCode: row.deviceCode,
-        itemName: row.itemName,
-        address: row.address,
-        dataType: row.dataType,
-        unit: row.unit,
-        scale: row.scale,
-        offset: row.offset,
-        collectionCycle: row.collectionCycle,
-        alarmHigh: row.alarmHigh,
-        alarmLow: row.alarmLow,
-        alarmEnabled: row.alarmEnabled,
-        enabled: row.enabled,
-      })
+      const planId = Number(row?.usingPointId ?? 0)
+      if (!planId) {
+        skipped++
+        continue
+      }
+      await configsApi.upsertPoint({id: planId, ...toCollectionPayload(row)})
     }
-    ElMessage.success('点位已更新')
+    if (skipped > 0) {
+      ElMessage.warning(`已更新 ${points.value.length - skipped} 个点位，${skipped} 个未投影到运行计划已跳过`)
+    } else {
+      ElMessage.success('点位已更新')
+    }
     await load()
   } catch (e: any) {
     ElMessage.error(e.message || '保存失败')
@@ -424,11 +477,19 @@ async function savePoints() {
   }
 }
 
-function statusType(s: number) {
+function statusTagType(status: number) {
+  return status === 1 ? 'success' : status === 2 ? 'danger' : 'info'
+}
+
+function statusText(status: number) {
+  return status === 1 ? '在线' : status === 2 ? '故障' : '离线'
+}
+
+function cmdStatusType(s: number) {
   return s === 2 ? 'success' : s === 3 ? 'danger' : 'info'
 }
 
-function statusText(s: number) {
+function cmdStatusText(s: number) {
   return s === 0 ? '待下发' : s === 1 ? '下发中' : s === 2 ? '成功' : s === 3 ? '失败' : '超时'
 }
 
@@ -437,3 +498,11 @@ onMounted(async () => {
   await load()
 })
 </script>
+
+<style lang="scss" scoped>
+.hint {
+  margin-left: 12px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+</style>

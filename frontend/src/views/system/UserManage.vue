@@ -73,7 +73,7 @@
 
     <el-dialog v-model="rolesDialogVisible" title="分配角色" width="460px">
       <el-checkbox-group v-model="selectedRoleIds">
-        <el-checkbox v-for="r in allRoles" :key="r.id" :value="r.id">{{ r.name }} - {{ r.description }}</el-checkbox>
+        <el-checkbox v-for="r in allRoles" :key="r.id" :value="r.roleCode">{{ r.roleName }} - {{ r.description }}</el-checkbox>
       </el-checkbox-group>
       <template #footer>
         <el-button @click="rolesDialogVisible = false">取消</el-button>
@@ -164,7 +164,7 @@ async function submitPwd() {
 
 function openRolesDialog(row: any) {
   editingUser.value = row
-  selectedRoleIds.value = row.roleIds || row.roles?.map((r: any) => (typeof r === 'object' ? r.id : r)) || []
+  selectedRoleIds.value = (row.roles || []).map((r: any) => (typeof r === 'object' ? r.roleCode : r))
   rolesDialogVisible.value = true
 }
 

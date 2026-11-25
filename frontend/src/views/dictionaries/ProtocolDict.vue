@@ -8,7 +8,6 @@
       <el-table-column label="ID" prop="id" width="70"/>
       <el-table-column label="编码" prop="protocolCode" width="140"/>
       <el-table-column label="协议名称" prop="protocolName" width="160"/>
-      <el-table-column label="版本" prop="version" width="100"/>
       <el-table-column label="描述" min-width="200" prop="description"/>
       <el-table-column label="操作" width="180">
         <template #default="{ row }">
@@ -29,9 +28,6 @@
         </el-form-item>
         <el-form-item label="名称">
           <el-input v-model="form.protocolName"/>
-        </el-form-item>
-        <el-form-item label="版本">
-          <el-input v-model="form.version"/>
         </el-form-item>
         <el-form-item label="描述">
           <el-input v-model="form.description" type="textarea"/>
@@ -54,7 +50,7 @@ const list = ref<any[]>([])
 const loading = ref(false)
 const dialogVisible = ref(false)
 const editing = ref<any>(null)
-const form = reactive({id: 0, protocolCode: '', protocolName: '', version: '', description: ''})
+const form = reactive({id: 0, protocolCode: '', protocolName: '', description: ''})
 
 async function load() {
   loading.value = true
@@ -71,7 +67,7 @@ async function load() {
 
 function openDialog(row?: any) {
   editing.value = row || null
-  Object.assign(form, row || {id: 0, protocolCode: '', protocolName: '', version: '', description: ''})
+  Object.assign(form, row || {id: 0, protocolCode: '', protocolName: '', description: ''})
   dialogVisible.value = true
 }
 

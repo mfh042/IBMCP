@@ -21,11 +21,15 @@ htmlcov/
 .vscode/
 *.swp
 
+# 本地 IDE 辅助（仅 Windows，由欧拉工具链生成/镜像，不入仓库、不传到欧拉）
+compile_commands.json
+.ide-deps/
+
 # Build artifacts
 build/
 dist/
 *.egg-info/
-collector-cpp/build/
+backend/collector/build/
 
 # Node / frontend
 node_modules/
@@ -46,3 +50,5 @@ logs/
 data/
 *.sqlite
 *.db
+# openEuler 远程工具（含密码，不入仓库）
+deployments/openeuler/euler*.ps1

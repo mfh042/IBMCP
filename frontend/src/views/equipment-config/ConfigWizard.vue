@@ -34,7 +34,7 @@ import {reactive, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import {ElMessage} from 'element-plus'
 import {equipmentConfigApi} from '@/api/equipmentConfig'
-import {httpService} from '@/comm/http'
+import {routeBindApi} from '@/api/routeBind'
 import Step1_EquipmentSelect from './wizard-steps/Step1_EquipmentSelect.vue'
 import Step2_RouteBind from './wizard-steps/Step2_RouteBind.vue'
 import Step3_DeviceBind from './wizard-steps/Step3_DeviceBind.vue'
@@ -67,22 +67,25 @@ function nextStep() {
   wizard.step++
 }
 
+function toJsonText(val: any): string {
+  if (val === null || val === undefined || val === '') return '{}'
+  if (typeof val === 'object') return JSON.stringify(val)
+  try { JSON.parse(val); return val } catch { return '{}' }
+}
+
 async function submit() {
   submitting.value = true
   try {
     // Sync device bindings from Step3 table
     step3Ref.value?.syncDeviceBindings()
 
-    // Step 1: Create config
+    // Step 1: Create config（config_status / run_status 由服务端托管，禁止直传）
     const configBody = {
       configCode: wizard.configCode,
       equipmentCode: wizard.equipmentCode,
       equipmentName: wizard.equipmentName,
       location: wizard.location,
       remark: wizard.remark,
-      configStatus: 0,
-      runStatus: 0,
-      createdBy: 'admin',
     }
     const configRes: any = await equipmentConfigApi.create(configBody)
     const configId = configRes?.id ?? configRes?.data?.id
@@ -99,11 +102,10 @@ async function submit() {
         routeName: rb.routeName,
         routeSeq: rb.routeSeq,
         enabled: 1,
-        createdBy: 'admin',
       })
     }
 
-    // Step 3: Bind functions
+    // Step 3: Bind functions（function_params 为 JSONB，统一序列化为合法 JSON 文本）
     for (const fb of wizard.functionBindings) {
       if (fb.enabled) {
         await equipmentConfigApi.bindFunction(configId, {
@@ -111,13 +113,12 @@ async function submit() {
           functionName: fb.functionName,
           functionType: fb.functionType,
           enabled: 1,
-          functionParams: fb.functionParamsStr || '{}',
-          createdBy: 'admin',
+          functionParams: toJsonText(fb.functionParamsStr),
         })
       }
     }
 
-    // Step 4: Get route configs and bind devices + collections
+    // Step 4: 取已创建的路线配置，逐条绑定设备 + 采集项
     const routeConfigs = await equipmentConfigApi.routesOf(configId)
     const routeList = (routeConfigs as any)?.items ?? (Array.isArray(routeConfigs) ? routeConfigs : [])
 
@@ -127,31 +128,29 @@ async function submit() {
       const deviceBindings = wizard.deviceBindings.filter((d: any) => d.routeCode === routeCode)
 
       for (const db of deviceBindings) {
-        const deviceRes: any = await httpService.post(`/api/running/routes/${routeConfigId}/devices`, {
-          stepId: db.stepId || 0,
+        // running_route_device 无 step_id / created_by 列；device_connection 为 JSONB
+        const deviceRes: any = await routeBindApi.bindDevice(routeConfigId, {
           stepCode: db.stepCode || '',
           stepName: db.stepName,
           stepSeq: db.stepSeq || 0,
           deviceCode: db.deviceCode,
           deviceName: db.deviceName,
-          deviceConnection: db.deviceConnectionStr,
+          deviceConnection: toJsonText(db.deviceConnectionStr),
           portCode: db.portCode,
           protocolCode: db.protocolCode,
           enabled: 1,
-          createdBy: 'admin',
         })
         const deviceBindingId = deviceRes?.id ?? deviceRes?.data?.id
 
         if (deviceBindingId && db.collections) {
           for (const col of db.collections) {
-            await httpService.post(`/api/running/devices/${deviceBindingId}/collections`, {
+            await routeBindApi.bindCollection(deviceBindingId, {
               itemCode: col.itemCode,
               itemName: col.itemName,
               deviceCode: db.deviceCode,
               collectionCycle: col.collectionCycle,
               addressOverride: col.addressOverride,
               enabled: col.enabled ? 1 : 0,
-              createdBy: 'admin',
             })
           }
         }

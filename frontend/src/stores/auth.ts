@@ -29,7 +29,7 @@ export const useAuthStore = defineStore('auth', {
             const payload = tryDecodeJwt(data.token)
             this.token = data.token
             this.userInfo = {
-                id: payload?.uid ?? 0,
+                id: data.id ?? Number(payload?.sub) ?? 0,
                 username: data.username ?? username,
                 displayName: data.displayName ?? '',
                 roles: data.roles ?? [],

@@ -82,12 +82,15 @@ function subscribeDataTopic() {
   if (dataHandler) return
   dataHandler = (payload: any) => {
     if (payload?.type !== 'data') return
-    if (Number(payload.pointId) !== currentPointId.value) return
-    const value = Number(payload.value)
-    if (!Number.isFinite(value)) return
-    history.value.push(value)
-    if (history.value.length > MAX_HISTORY) history.value.shift()
-    updateChart()
+    const samples: any[] = Array.isArray(payload.samples) ? payload.samples : []
+    for (const p of samples) {
+      if (Number(p.point_id) !== currentPointId.value) continue
+      const value = Number(p.value)
+      if (!Number.isFinite(value)) continue
+      history.value.push(value)
+      if (history.value.length > MAX_HISTORY) history.value.shift()
+      updateChart()
+    }
   }
   wsService.subscribe('data', dataHandler)
 }

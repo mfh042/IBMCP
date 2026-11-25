@@ -56,7 +56,7 @@ export class IbmcpWsClient {
             handlers.add(cb)
         } else {
             this.subscriptions.set(topic, new Set([cb]))
-            this.send({action: 'subscribe', topic})
+            this.send({type: 'subscribe', topic})
         }
     }
 
@@ -66,7 +66,7 @@ export class IbmcpWsClient {
         handlers.delete(cb)
         if (handlers.size === 0) {
             this.subscriptions.delete(topic)
-            this.send({action: 'unsubscribe', topic})
+            this.send({type: 'unsubscribe', topic})
         }
     }
 
@@ -123,55 +123,60 @@ export class IbmcpWsClient {
     }
 
     private onMessage(raw: string) {
-        let envelope: any
+        let frame: any
         try {
-            envelope = JSON.parse(raw)
+            frame = JSON.parse(raw)
         } catch {
             console.warn('[IbmcpWsClient] non-JSON message:', raw)
             return
         }
-        if (!envelope || typeof envelope !== 'object') return
+        if (!frame || typeof frame !== 'object') return
 
-        if (envelope.type === 'pong') {
+        if (frame.type === 'pong') {
             this.missedPongs = 0
             return
         }
-        if (envelope.type === 'hello') {
-            console.log('[IbmcpWsClient] hello:', envelope.service ?? 'ibmcp')
+        if (frame.type === 'hello') {
+            console.log('[IbmcpWsClient] hello:', frame.service ?? 'ibmcp')
             return
         }
-        if (envelope.type === 'subscribed' || envelope.type === 'unsubscribed') {
+        if (frame.type === 'subscribed' || frame.type === 'unsubscribed') {
             return
         }
-        if (envelope.error) {
-            console.warn('[IbmcpWsClient] server error:', envelope.error)
+        if (frame.error || frame.type === 'error') {
+            console.warn('[IbmcpWsClient] server error:', frame.error ?? frame.message ?? frame)
             return
         }
 
-        const topic = envelope.topic as string | undefined
+        // 后端直接透传业务帧（无 {topic,payload} 外壳），依据帧 type 推导 topic。
+        const topic = this.topicOf(frame.type)
         if (!topic) return
 
-        let payload = envelope.payload ?? null
-        if (typeof payload === 'string') {
-            try {
-                payload = JSON.parse(payload)
-            } catch {
-                console.warn('[IbmcpWsClient] invalid payload string:', topic)
-                return
-            }
-        }
-        if (!payload || typeof payload !== 'object') return
+        this.dispatch(topic, frame)
 
-        this.dispatch(topic, payload)
-
-        if (topic === 'device' && payload.type === 'device_status') {
+        if (topic === 'device') {
             this.deviceStatusHandlers.forEach((cb) => {
                 try {
-                    cb(payload)
+                    cb(frame)
                 } catch (e) {
                     console.error('[IbmcpWsClient] device handler error:', e)
                 }
             })
+        }
+    }
+
+    private topicOf(type: string | undefined): IbmcpTopic | string | null {
+        switch (type) {
+            case 'data':
+                return 'data'
+            case 'device_status':
+                return 'device'
+            case 'alarm':
+                return 'alarm'
+            case 'control_finished':
+                return 'control'
+            default:
+                return null
         }
     }
 
@@ -217,7 +222,7 @@ export class IbmcpWsClient {
                 return
             }
             this.missedPongs++
-            this.send({action: 'ping'})
+            this.send({type: 'ping'})
         }, HEARTBEAT_INTERVAL)
     }
 
@@ -231,7 +236,7 @@ export class IbmcpWsClient {
 
     private resubscribeAll() {
         this.subscriptions.forEach((_handlers, topic) => {
-            this.send({action: 'subscribe', topic})
+            this.send({type: 'subscribe', topic})
         })
     }
 }

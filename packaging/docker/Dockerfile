@@ -1,18 +1,24 @@
 FROM openeuler/openeuler:24.03-lts
-RUN dnf install -y python3.11 python3.11-pip python3.11-devel gcc-c++ cmake make \
-    postgresql-devel redis && dnf clean all
+
+RUN dnf install -y gcc-c++ cmake make git pkgconf-pkg-config \
+    openssl-devel libuuid-devel zlib-devel jsoncpp-devel \
+    postgresql-devel hiredis-devel argon2-devel \
+    tar gzip which file && dnf clean all
+
+RUN cd /opt && git clone --branch v1.9.5 --depth 1 https://github.com/drogonframework/drogon.git \
+    && cd drogon && git submodule update --init \
+    && cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
+       -DBUILD_CTL=ON -DBUILD_EXAMPLES=OFF -DBUILD_ORM=ON \
+    && cmake --build build -j"$(nproc)" \
+    && cmake --install build \
+    && rm -rf /opt/drogon
+
 WORKDIR /opt/ibmcp
 COPY backend/ ./backend/
-COPY collector-python/ ./collector-python/
-COPY collector-cpp/ ./collector-cpp/
-COPY pyproject.toml ./
-RUN python3.11 -m pip install --upgrade pip pybind11 \
- && cmake -S collector-cpp -B collector-cpp/build \
-      -DCMAKE_BUILD_TYPE=Release \
-      -Dpybind11_DIR="$(python3.11 -c 'import pybind11; print(pybind11.get_cmake_dir())')" \
-      -DPython_EXECUTABLE="$(command -v python3.11)" \
- && cmake --build collector-cpp/build -j"$(nproc)" \
- && cmake --install collector-cpp/build --prefix collector-python \
- && python3.11 -m pip install .
+COPY backend/collector/ ./backend/collector/
+
+RUN cmake -S backend -B build -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build build -j"$(nproc)"
+
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/opt/ibmcp/build/ibmcp_server"]

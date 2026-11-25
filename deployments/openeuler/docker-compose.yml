@@ -1,16 +1,16 @@
 # =============================================================================
-# IBMCP 开发环境 Docker Compose —— PG15 / Redis / Node-RED
-# 用法：cd /home/meng/ibmcp && docker compose -f deployments/openeuler/docker-compose.yml up -d
+# IBMCP Docker Compose —— PG15 / Redis / Node-RED（纯服务容器）
+# 用法：docker compose -f deployments/openeuler/docker-compose.yml up -d
 #
-# 本文件只管三个纯服务容器（PG / Redis / Node-RED）。
-# FastAPI + C++ 扩展 + Nginx 必须裸机跑（见 08 号文档 §1.3）。
+# 本文件只管三个纯服务容器。
+# Drogon C++ 后端 + Nginx 必须裸机跑（直接访问宿主 libpq 与协议驱动库）。
 # =============================================================================
 
 services:
   # ---------------------------------------------------------------------------
   # PostgreSQL 15 —— 时序数据 + 配置 + 运行态
-  # 口径与 backend/.env.example / app/core/config.py 完全一致：
-  #   PG_USER=ibmcp  PG_PASSWORD=ibmcp  PG_DATABASE=ibmcp  PG_PORT=5432
+  # 连接口径与 backend/config.json 完全一致：
+  #   host=127.0.0.1  port=5432  user=ibmcp  passwd=ibmcp  dbname=ibmcp
   # ---------------------------------------------------------------------------
   postgres:
     image: postgres:15

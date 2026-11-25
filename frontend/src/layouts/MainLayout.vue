@@ -2,8 +2,11 @@
   <el-container class="main-layout">
     <el-aside class="aside" width="220px">
       <div class="logo">
-        <span class="logo-text">IBMCP</span>
-        <span class="logo-sub">工业黑盒集控平台</span>
+        <img src="/logo.jpg" alt="IBMCP" class="logo-img"/>
+        <div class="logo-text-group">
+          <span class="logo-text">IBMCP</span>
+          <span class="logo-sub">工业黑盒集控平台</span>
+        </div>
       </div>
       <el-menu
           :default-active="activeMenu"
@@ -205,21 +208,38 @@ export default {name: 'MainLayout'}
   height: 60px;
   flex-shrink: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   justify-content: center;
   align-items: center;
+  gap: 10px;
   border-bottom: 1px solid #374151;
+
+  .logo-img {
+    width: 36px;
+    height: 36px;
+    object-fit: cover;
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
+
+  .logo-text-group {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
 
   .logo-text {
     font-size: 20px;
     font-weight: 700;
     color: #fff;
     letter-spacing: 2px;
+    line-height: 1.2;
   }
 
   .logo-sub {
     font-size: 11px;
     color: #94a3b8;
+    line-height: 1.2;
   }
 }
 

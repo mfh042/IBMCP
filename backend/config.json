@@ -1,0 +1,78 @@
+{
+  "listeners": [
+    {
+      "address": "0.0.0.0",
+      "port": 8000,
+      "https": false
+    }
+  ],
+  "app": {
+    "threads_num": 4,
+    "document_root": "./",
+    "home_page": "index.html",
+    "use_gzip": false,
+    "client_max_body_size": "10M",
+    "log": {
+      "log_path": "./logs",
+      "logfile_base_name": "ibmcp",
+      "log_size_limit": 100000000
+    }
+  },
+  "db_clients": [
+    {
+      "name": "default",
+      "rdbms": "postgresql",
+      "host": "127.0.0.1",
+      "port": 5432,
+      "dbname": "ibmcp",
+      "user": "ibmcp",
+      "passwd": "ibmcp",
+      "is_fast": false,
+      "number_of_connections": 5
+    },
+    {
+      "name": "write",
+      "rdbms": "postgresql",
+      "host": "127.0.0.1",
+      "port": 5432,
+      "dbname": "ibmcp",
+      "user": "ibmcp",
+      "passwd": "ibmcp",
+      "is_fast": false,
+      "number_of_connections": 5
+    }
+  ],
+  "redis_clients": [
+    {
+      "name": "default",
+      "host": "127.0.0.1",
+      "port": 6379,
+      "username": "",
+      "passwd": "",
+      "db": 0,
+      "is_fast": false,
+      "number_of_connections": 5,
+      "timeout": 1.0
+    }
+  ],
+  "custom_config": {
+    "app_name": "IBMCP",
+    "app_secret_key": "dev-secret-change-me",
+    "access_token_expire_minutes": 1440,
+    "cors_origins": ["http://localhost:5173"],
+    "pg_dsn": "postgresql://ibmcp:ibmcp@127.0.0.1:5432/ibmcp",
+    "migrations_dir": "./migrations",
+    "collector_cfg": {},
+    "sample_pump_interval_ms": 200,
+    "sample_pump_batch_size": 500,
+    "public_paths": [
+      "/api/v1/auth/login",
+      "/api/v1/auth/refresh",
+      "/api/v1/ping",
+      "/api/v1/redis/ping",
+      "/api/v1/openapi.json",
+      "/api/v1/docs",
+      "/api/v1/redoc"
+    ]
+  }
+}

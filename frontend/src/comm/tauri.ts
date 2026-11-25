@@ -11,7 +11,7 @@ export const tauriCommands = {
     },
 
     async setApiConfig(apiAddr: string, wsAddr: string): Promise<void> {
-        return invoke<void>('set_api_config', {apiAddr, wsAddr})
+        return invoke<void>('set_api_config', {api_addr: apiAddr, ws_addr: wsAddr})
     },
 
     async checkBackendHealth(url: string): Promise<boolean> {

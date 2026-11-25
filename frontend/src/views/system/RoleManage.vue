@@ -6,7 +6,8 @@
     </div>
     <el-table v-loading="loading" :data="list" stripe>
       <el-table-column label="ID" prop="id" width="70"/>
-      <el-table-column label="角色名称" prop="name" width="160"/>
+      <el-table-column label="角色编码" prop="roleCode" width="160"/>
+      <el-table-column label="角色名称" prop="roleName" width="160"/>
       <el-table-column label="描述" min-width="220" prop="description"/>
       <el-table-column label="操作" width="180">
         <template #default="{ row }">
@@ -22,8 +23,11 @@
 
     <el-dialog v-model="dialogVisible" :title="editing ? '编辑角色' : '新增角色'" width="460px">
       <el-form :model="form" label-width="90px">
+        <el-form-item label="角色编码">
+          <el-input v-model="form.roleCode" :disabled="!!editing"/>
+        </el-form-item>
         <el-form-item label="角色名称">
-          <el-input v-model="form.name"/>
+          <el-input v-model="form.roleName"/>
         </el-form-item>
         <el-form-item label="描述">
           <el-input v-model="form.description" type="textarea"/>
@@ -46,7 +50,7 @@ const list = ref<any[]>([])
 const loading = ref(false)
 const dialogVisible = ref(false)
 const editing = ref<any>(null)
-const form = reactive({id: 0, name: '', description: ''})
+const form = reactive({id: 0, roleCode: '', roleName: '', description: ''})
 
 async function load() {
   loading.value = true
@@ -63,7 +67,7 @@ async function load() {
 
 function openDialog(row?: any) {
   editing.value = row || null
-  Object.assign(form, row || {id: 0, name: '', description: ''})
+  Object.assign(form, row || {id: 0, roleCode: '', roleName: '', description: ''})
   dialogVisible.value = true
 }
 

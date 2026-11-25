@@ -1,1 +1,0 @@
-import{h as r}from"./http-DJyO_2px.js";const p={list:a=>r.get("/api/v1/alarms/list",{params:a}),ack:a=>r.put(`/api/v1/alarms/${a}/ack`),recover:a=>r.put(`/api/v1/alarms/${a}/recover`)};export{p as a};

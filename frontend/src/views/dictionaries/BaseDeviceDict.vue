@@ -179,20 +179,14 @@ function onBrandChange() {
 
 function parseProtocols(val: any): string[] {
   if (!val) return []
-  try {
-    return JSON.parse(val)
-  } catch {
-    return []
-  }
+  const raw = typeof val === 'string' ? (() => { try { return JSON.parse(val) } catch { return [] } })() : val
+  return Array.isArray(raw) ? raw : []
 }
 
 function parsePorts(val: any): string[] {
   if (!val) return []
-  try {
-    return JSON.parse(val)
-  } catch {
-    return []
-  }
+  const raw = typeof val === 'string' ? (() => { try { return JSON.parse(val) } catch { return [] } })() : val
+  return Array.isArray(raw) ? raw : []
 }
 
 function parseDataItems(val: any): any[] {
@@ -289,8 +283,6 @@ async function submit() {
       supportedPorts: JSON.stringify(form.supportedPortsArr),
       dataItems: JSON.stringify(dataItemsJson),
       description: form.description,
-      createdBy: 'admin',
-      updatedBy: 'admin',
     }
     if (editing.value) await baseDevicesApi.deviceUpdate(editing.value.id, body)
     else await baseDevicesApi.deviceCreate(body)

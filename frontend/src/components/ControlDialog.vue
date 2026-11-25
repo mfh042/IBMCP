@@ -12,7 +12,7 @@
               v-for="pt in points"
               :key="pt.id"
               :label="pt.itemName"
-              :value="pt.id"
+              :value="controlPointId(pt)"
           />
         </el-select>
       </el-form-item>
@@ -38,7 +38,7 @@ import {devicesApi} from '@/api/devices'
 
 const props = defineProps<{
   modelValue: boolean
-  deviceId: number
+  deviceCode: string
   points: any[]
 }>()
 const emit = defineEmits<{
@@ -52,6 +52,8 @@ const form = reactive<{ pointId: number | null; value: string }>({
   pointId: null,
   value: '',
 })
+
+const controlPointId = (pt: any) => Number(pt?.usingPointId ?? pt?.id ?? 0)
 
 watch(
     () => props.modelValue,
@@ -71,8 +73,8 @@ async function handleSend() {
   sending.value = true
   result.value = '执行中...'
   try {
-    const pt = props.points.find((p: any) => p.id === form.pointId)
-    const data = await devicesApi.control(props.deviceId, {
+    const pt = props.points.find((p: any) => controlPointId(p) === form.pointId)
+    const data = await devicesApi.control(props.deviceCode, {
       pointId: form.pointId,
       pointName: pt ? (pt.itemName || pt.name || '') : '',
       value: form.value,

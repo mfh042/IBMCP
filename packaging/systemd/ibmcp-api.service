@@ -1,17 +1,18 @@
 [Unit]
-Description=IBMCP FastAPI API + Collector Extension
+Description=IBMCP Drogon API Server (C++)
 After=network.target docker.service nginx.service
+Requires=docker.service
 
 [Service]
 Type=simple
 User=meng
-WorkingDirectory=/home/meng/ibmcp/backend
-EnvironmentFile=/home/meng/ibmcp/backend/.env
-ExecStart=/home/meng/ibmcp/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+WorkingDirectory=/home/meng/ibmcp/dist
+ExecStart=/home/meng/ibmcp/dist/bin/ibmcp_server
 Restart=always
 RestartSec=3
 LimitNOFILE=65536
 LimitNPROC=8192
+Environment=TZ=Asia/Shanghai
 
 [Install]
 WantedBy=multi-user.target

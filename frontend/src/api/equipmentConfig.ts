@@ -9,6 +9,8 @@ export const equipmentConfigApi = {
     update: (id: number, body: any) => httpService.put(`/api/v1/config/equipments/${id}`, body),
     remove: (id: number) => httpService.delete(`/api/v1/config/equipments/${id}`),
     expand: (id: number) => httpService.get(`/api/v1/config/equipments/${id}/expand`),
+    activate: (id: number) => httpService.post(`/api/v1/config/equipments/${id}/activate`),
+    unload: (id: number) => httpService.post(`/api/v1/config/equipments/${id}/unload`),
 
     routesOf: (configId: number) => httpService.get('/api/v1/config/routes', {params: {config_id: configId}}),
     bindRoute: (configId: number, body: any) =>

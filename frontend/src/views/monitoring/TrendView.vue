@@ -61,7 +61,13 @@ async function handleQuery() {
       end: endSec,
       agg: form.agg,
     })
-    const rows = Array.isArray(res?.rows) ? res.rows : Array.isArray(res) ? res : []
+    const rows = Array.isArray(res?.items)
+      ? res.items
+      : Array.isArray(res?.list)
+          ? res.list
+          : Array.isArray(res)
+              ? res
+              : []
     renderChart(rows)
   } catch (e: any) {
     ElMessage.error(e.message || '查询失败')
@@ -78,21 +84,20 @@ function renderChart(rows: (HistoryRawRow | HistoryAggRow)[]) {
       window.addEventListener('resize', onResize)
     }
 
-    const times = rows.map((r) => formatTime(r.timestamp))
-    const isAgg = form.agg !== 'raw'
-    const avg = rows.map((r: any) => (isAgg ? r.avg : r.value))
-    const max = isAgg ? rows.map((r: any) => r.max) : []
-    const min = isAgg ? rows.map((r: any) => r.min) : []
+    const times = rows.map((r: any) => formatTime(r.ts))
+    const isRaw = form.agg === 'raw'
+    const values = rows.map((r: any) => r.value)
 
     const series: any[] = [
-      {name: isAgg ? '均值' : '原始值', type: 'line', data: avg, smooth: true, showSymbol: false},
+      {
+        name: isRaw ? '原始值' : '聚合值',
+        type: 'line',
+        data: values,
+        smooth: true,
+        showSymbol: false,
+        lineStyle: {color: '#2563eb'},
+      },
     ]
-    if (isAgg) {
-      series.push(
-          {name: '峰值', type: 'line', data: max, smooth: true, showSymbol: false, lineStyle: {color: '#ef4444'}},
-          {name: '谷值', type: 'line', data: min, smooth: true, showSymbol: false, lineStyle: {color: '#22c55e'}},
-      )
-    }
 
     chart.setOption(
         {
