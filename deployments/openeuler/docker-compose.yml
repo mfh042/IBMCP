@@ -51,8 +51,9 @@ services:
       retries: 5
 
   # ---------------------------------------------------------------------------
-  # Node-RED —— PLC 模拟器 / 协议探针 / 数据导出（联调辅助）
-  # 浏览器访问 http://192.168.80.135:1880
+  # Node-RED —— PLC 模拟器 / 协议探针 / 数据导出 / 告警联动（编排扩展层）
+  # 编辑器   http://192.168.80.136:1880  （已启用 adminAuth 登录）
+  # Modbus 从站 0.0.0.0:1502             （模拟器流，供后端采集器连接）
   # ---------------------------------------------------------------------------
   nodered:
     image: nodered/node-red:latest
@@ -62,6 +63,9 @@ services:
       TZ: Asia/Shanghai
     ports:
       - "1880:1880"
+      - "1502:1502"   # Modbus TCP 模拟器从站端口（后端采集器连此）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # 流内可用 host.docker.internal 访问宿主后端
     volumes:
       - nodered_data:/data
     depends_on:

@@ -58,6 +58,7 @@
           </template>
           <el-menu-item index="/equipment-config">装备运行实例</el-menu-item>
           <el-menu-item index="/equipment-config/wizard">配置向导</el-menu-item>
+          <el-menu-item index="/node-red/editor">Node-RED 流编辑器</el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu v-if="hasAny(['admin','engineer','operator'])" index="devices">

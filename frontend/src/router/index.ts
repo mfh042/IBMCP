@@ -71,6 +71,12 @@ const routes = [
                 meta: {title: '编辑配置', roles: ['admin', 'engineer']},
             },
             {
+                path: 'node-red/editor',
+                name: 'NodeRedEditor',
+                component: () => import('@/views/node-red/NodeRedEditor.vue'),
+                meta: {title: 'Node-RED 流编辑器', roles: ['admin', 'engineer']},
+            },
+            {
                 path: 'running/routes/:id',
                 name: 'RouteBindDetail',
                 component: () => import('@/views/running/RouteBindDetail.vue'),

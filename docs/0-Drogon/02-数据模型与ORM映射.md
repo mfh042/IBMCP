@@ -62,7 +62,9 @@
 
 ## 2. Drogon Model 生成策略
 
-Drogon 提供 `drogon_ctl create model <dsn> <table>` 从表结构生成 ORM 类（`.h` / `.cc`），生成到 `backend/models/`。但本项目有三种非标准情况，需区别处理：
+> **现状（以代码为准）**：项目当前**未**使用 `drogon_ctl create model` 生成 ORM 类——`backend/` 下不存在 `models/` 目录，也无任何生成的 Model 类。全部数据访问通过 `db::client()` / `db::writeClient()`（封装于 [backend/src/db/db.cpp](file:///e:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP-drogon/backend/src/db/db.cpp)，返回 `default` / `write` 连接池的 `DbClient`），再调用 `execSqlCoro` 执行裸 SQL（全库 138 处，分布于 controller / service / collector）。下文 §2.1–2.4 为**早期设计策略**，留作参考；若未来引入 ORM 再按此执行。
+
+Drogon 提供 `drogon_ctl create model <dsn> <table>` 从表结构生成 ORM 类（`.h` / `.cc`），生成到 `backend/models/`。但本项目有三种非标准情况，需区别处理（以下为设计参考，当前未实施）：
 
 ### 2.1 单 BIGSERIAL 主键表 → 直接生成
 

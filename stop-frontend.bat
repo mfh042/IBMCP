@@ -1,3 +1,4 @@
+@chcp 65001>nul
 @echo off
 setlocal
 cd /d "%~dp0"
@@ -6,30 +7,32 @@ set "PORT=%~1"
 if "%PORT%"=="" set "PORT=5173"
 echo %PORT%| findstr /r "^[0-9][0-9]*$" >nul
 if errorlevel 1 (
-    echo [´íÎó] ¶Ë¿Ú±ØÐëÊÇÊý×Ö: %PORT%
-    echo ÓÃ·¨: stop-frontend.bat [¶Ë¿Ú]   Ä¬ÈÏ 5173
-    echo °´ÈÎÒâ¼ü¹Ø±Õ...
+    echo [é”™è¯¯] ç«¯å£å¿…é¡»æ˜¯æ•°å­—: %PORT%
+    echo ç”¨æ³•: stop-frontend.bat [ç«¯å£]   é»˜è®¤ 5173
+    echo æŒ‰ä»»æ„é”®å…³é—­...
     pause >nul
     endlocal & exit /b 1
 )
 
-echo [IBMCP] Í£Ö¹Ç°¶Ë (¶Ë¿Ú %PORT%)
+echo [IBMCP] åœæ­¢å‰ç«¯ (ç«¯å£ %PORT%)
 echo.
 
 set "KILLED=0"
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr /C:":%PORT% " ^| findstr LISTENING') do (
-    echo   ÖÕÖ¹½ø³Ì PID=%%a
-    taskkill /F /PID %%a >nul 2>&1
-    set "KILLED=1"
+    echo %%a| findstr /r "^[0-9][0-9]*$" >nul && (
+        echo   ç»ˆæ­¢è¿›ç¨‹ PID=%%a
+        taskkill /F /PID %%a >nul 2>&1
+        set "KILLED=1"
+    )
 )
 
 if "%KILLED%"=="0" (
-    echo   Î´·¢ÏÖÕ¼ÓÃ %PORT% ¶Ë¿ÚµÄ½ø³Ì£¨Ç°¶Ë¿ÉÄÜÎ´ÔËÐÐ£©
+    echo   æœªå‘çŽ°å ç”¨ %PORT% ç«¯å£çš„è¿›ç¨‹ï¼ˆå‰ç«¯å¯èƒ½æœªè¿è¡Œï¼‰
 ) else (
-    echo [IBMCP] Ç°¶ËÒÑÍ£Ö¹
+    echo [IBMCP] å‰ç«¯å·²åœæ­¢
 )
 
 echo.
-echo °´ÈÎÒâ¼ü¹Ø±Õ´°¿Ú...
+echo æŒ‰ä»»æ„é”®å…³é—­çª—å£...
 pause >nul
 endlocal & exit /b 0

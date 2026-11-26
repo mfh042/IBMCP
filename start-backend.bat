@@ -1,3 +1,4 @@
+@chcp 65001>nul
 @echo off
 setlocal
 cd /d "%~dp0"
@@ -7,7 +8,7 @@ set "PORT=%~2"
 set "FEPORT=%~3"
 if "%MODE%"=="" set "MODE=build"
 
-REM ÈôµÚÒ»¸ö²ÎÊıÊÇ´¿Êı×Ö£¬ÔòÊÓÎª¶Ë¿Ú£¬Ä£Ê½È¡Ä¬ÈÏ build
+REM è‹¥ç¬¬ä¸€ä¸ªå‚æ•°æ˜¯çº¯æ•°å­—ï¼Œåˆ™è§†ä¸ºç«¯å£ï¼Œæ¨¡å¼å–é»˜è®¤ build
 echo %MODE%| findstr /r "^[0-9][0-9]*$" >nul
 if not errorlevel 1 (
     set "PORT=%MODE%"
@@ -27,17 +28,17 @@ if "%FEPORT%"=="" set "FEPORT=5173"
 
 echo %PORT%| findstr /r "^[0-9][0-9]*$" >nul
 if errorlevel 1 (
-    echo [´íÎó] ºó¶Ë¶Ë¿Ú±ØĞëÊÇÊı×Ö: %PORT%
+    echo [é”™è¯¯] åç«¯ç«¯å£å¿…é¡»æ˜¯æ•°å­—: %PORT%
     goto :help
 )
 echo %FEPORT%| findstr /r "^[0-9][0-9]*$" >nul
 if errorlevel 1 (
-    echo [´íÎó] Ç°¶Ë¶Ë¿Ú±ØĞëÊÇÊı×Ö: %FEPORT%
+    echo [é”™è¯¯] å‰ç«¯ç«¯å£å¿…é¡»æ˜¯æ•°å­—: %FEPORT%
     goto :help
 )
 
-echo [IBMCP] ºó¶Ë¿ìËÙÆô¶¯  Ä£Ê½=%MODE%  ¶Ë¿Ú=%PORT%  Ç°¶Ë¶Ë¿Ú=%FEPORT%
-echo [IBMCP] ÏîÄ¿¸ù: %cd%
+echo [IBMCP] åç«¯å¿«é€Ÿå¯åŠ¨  æ¨¡å¼=%MODE%  ç«¯å£=%PORT%  å‰ç«¯ç«¯å£=%FEPORT%
+echo [IBMCP] é¡¹ç›®æ ¹: %cd%
 echo.
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0deployments\openeuler\start-backend.ps1" -Mode %MODE% -Port %PORT% -FrontendPort %FEPORT%
@@ -45,31 +46,31 @@ set "RC=%ERRORLEVEL%"
 
 echo.
 if not "%RC%"=="0" (
-    echo [IBMCP] Ö´ĞĞÊ§°Ü ^(exit %RC%^)
-    echo °´ÈÎÒâ¼ü¹Ø±Õ´°¿Ú...
+    echo [IBMCP] æ‰§è¡Œå¤±è´¥ ^(exit %RC%^)
+    echo æŒ‰ä»»æ„é”®å…³é—­çª—å£...
     pause >nul
 )
 endlocal & exit /b %RC%
 
 :help
-echo IBMCP ºó¶Ë¿ìËÙÆô¶¯ ^(openEuler Ô¶³Ì±àÒë + systemd ÖØÆô^)
+echo IBMCP åç«¯å¿«é€Ÿå¯åŠ¨ ^(openEuler è¿œç¨‹ç¼–è¯‘ + systemd é‡å¯^)
 echo.
-echo  ÓÃ·¨:
-echo    start-backend.bat [Ä£Ê½] [ºó¶Ë¶Ë¿Ú] [Ç°¶Ë¶Ë¿Ú]
+echo  ç”¨æ³•:
+echo    start-backend.bat [æ¨¡å¼] [åç«¯ç«¯å£] [å‰ç«¯ç«¯å£]
 echo.
-echo  Ä£Ê½ ^(Ä¬ÈÏ build^):
-echo    start-backend.bat                Í¬²½Ô´Âë + ±àÒë + ÖØÆô   ^(¶Ë¿Ú 8000^)
-echo    start-backend.bat /build         Í¬ÉÏ
-echo    start-backend.bat /restart       ½öÖØÆô·şÎñ ^(´úÂëÎ´¸ÄÊ±½Ï¿ì^)
-echo    start-backend.bat /stop          Í£Ö¹·şÎñ
-echo    start-backend.bat /status        ²é¿´×´Ì¬ + ½¡¿µ¼ì²é
-echo    start-backend.bat /logs          ²é¿´×î½ü 50 ĞĞÈÕÖ¾
+echo  æ¨¡å¼ ^(é»˜è®¤ build^):
+echo    start-backend.bat                åŒæ­¥æºç  + ç¼–è¯‘ + é‡å¯   ^(ç«¯å£ 8000^)
+echo    start-backend.bat /build         åŒä¸Š
+echo    start-backend.bat /restart       ä»…é‡å¯æœåŠ¡ ^(ä»£ç æœªæ”¹æ—¶è¾ƒå¿«^)
+echo    start-backend.bat /stop          åœæ­¢æœåŠ¡
+echo    start-backend.bat /status        æŸ¥çœ‹çŠ¶æ€ + å¥åº·æ£€æŸ¥
+echo    start-backend.bat /logs          æŸ¥çœ‹æœ€è¿‘ 50 è¡Œæ—¥å¿—
 echo.
-echo  ¶Ë¿Ú ^(Ä¬ÈÏ ºó¶Ë 8000 / Ç°¶Ë 5173^):
-echo    start-backend.bat 8001           build Ä£Ê½£¬ºó¶Ë¼àÌı 8001
-echo    start-backend.bat /restart 8001  restart Ä£Ê½£¬ºó¶Ë¼àÌı 8001
-echo    start-backend.bat /build 8000 5174   ºó¶Ë 8000£¬Ç°¶Ë cors ·ÅĞĞ 5174
+echo  ç«¯å£ ^(é»˜è®¤ åç«¯ 8000 / å‰ç«¯ 5173^):
+echo    start-backend.bat 8001           build æ¨¡å¼ï¼Œåç«¯ç›‘å¬ 8001
+echo    start-backend.bat /restart 8001  restart æ¨¡å¼ï¼Œåç«¯ç›‘å¬ 8001
+echo    start-backend.bat /build 8000 5174   åç«¯ 8000ï¼Œå‰ç«¯ cors æ”¾è¡Œ 5174
 echo.
-echo  ËµÃ÷: Æô¶¯Ç°Èô¶Ë¿Ú±»Õ¼ÓÃ»á×Ô¶¯ÏÈÍ£Ö¹Õ¼ÓÃ½ø³ÌÔÙÆô¶¯¡£
-echo  ÒÀÀµ: deployments\openeuler\euler-remote.ps1 ^(ĞèÏÈ eInitKey Åä SSH ÃâÃÜ^)
+echo  è¯´æ˜: å¯åŠ¨å‰è‹¥ç«¯å£è¢«å ç”¨ä¼šè‡ªåŠ¨å…ˆåœæ­¢å ç”¨è¿›ç¨‹å†å¯åŠ¨ã€‚
+echo  ä¾èµ–: deployments\openeuler\euler-remote.ps1 ^(éœ€å…ˆ eInitKey é… SSH å…å¯†^)
 endlocal & exit /b 0

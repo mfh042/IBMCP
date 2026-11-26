@@ -34,7 +34,7 @@ async function loadTree() {
     const routes = data?.routes || []
     routes.forEach((r: any) => {
       const children: any[] = []
-      const bindings = r.bindings || []
+      const bindings = r.devices || []
       bindings.forEach((b: any) => {
         const pts: any[] = (b.collections || []).map((c: any) => ({
           id: `pt-${c.id}`,

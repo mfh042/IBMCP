@@ -4,7 +4,7 @@
 
 ## 1. Controller 拆分方案
 
-将旧 9 个路由模块 + ping 映射为 13 个 Drogon `HttpController` 子类 + 1 个 `WebSocketController`：
+将旧 9 个路由模块 + ping 映射为 14 个 Drogon `HttpController` 子类 + 1 个 `WebSocketController`：
 
 | 新 Controller | 路径前缀 | 对应旧文件 |
 |---------------|----------|-----------|
@@ -21,6 +21,7 @@
 | `AlarmController` | `/api/v1/alarms` | `alarms.py` |
 | `ControlController` | `/api/v1/control` | `control.py` |
 | `CollectorAdminController` | `/api/v1/collector` | `collector_admin.py` |
+| `NodeRedController` | `/api/v1/node-red` | 新增（Node-RED 容器运行状态管理） |
 | `WsPushController`（WS） | `/ws/push`, `/api/v1/ws/collect` | `ws.py` |
 
 > `running_config.py` 单文件 32 个端点，按资源拆为 5 个 Controller，避免单文件过大，与「五级配置链」的资源边界对齐。
@@ -30,7 +31,7 @@
 每个 Controller 继承 `drogon::HttpController<Derived>`，用宏注册方法。示例（`SystemController`）：
 
 ```cpp
-// include/ibmcp/controller/system_controller.h
+// include/controller/system_controller.h
 #pragma once
 #include <drogon/HttpController.h>
 namespace ibmcp {
@@ -87,13 +88,14 @@ Task<HttpResponsePtr> RuntimeDeviceController::control(
 
 ## 3. 完整端点映射表
 
-下表覆盖全部 78 个端点。`Auth` 列：`✓` 表示需登录（由全局鉴权 Advice 校验），`—` 表示公开（advice 白名单放行）。
+下表覆盖全部 86 个端点（84 个 REST + 2 个 WebSocket）。`Auth` 列：`✓` 表示需登录（由全局鉴权 Advice 校验），`—` 表示公开（advice 白名单放行）。
 
 ### 3.1 system / ping
 
 | 方法 | 路径 | Auth | 旧位置 | 新方法 |
 |------|------|------|--------|--------|
 | GET | `/api/v1/ping` | — | `router.py:20` | `SystemController::ping` |
+| GET | `/api/v1/redis/ping` | — | — | `SystemController::redisPing`（Redis 连通性探活，公开） |
 
 ### 3.2 auth
 
@@ -237,7 +239,18 @@ Task<HttpResponsePtr> RuntimeDeviceController::control(
 | GET | `/api/v1/collector/stats` | ✓ | `collector_admin.py:28` | `CollectorAdminController::stats` |
 | POST | `/api/v1/collector/reload` | ✓ | `collector_admin.py:43` | `CollectorAdminController::reload` |
 
-### 3.10 websocket
+### 3.10 node-red（Node-RED 容器管理）
+
+| 方法 | 路径 | Auth | 旧位置 | 新方法 |
+|------|------|------|--------|--------|
+| GET | `/api/v1/node-red/status` | ✓ | — | `NodeRedController::status` |
+| POST | `/api/v1/node-red/start` | ✓ | — | `NodeRedController::start` |
+| POST | `/api/v1/node-red/stop` | ✓ | — | `NodeRedController::stop` |
+| POST | `/api/v1/node-red/restart` | ✓ | — | `NodeRedController::restart` |
+
+> 上述端点操作 Euler 上 `ibmcp-nodered` Docker 容器的运行状态（详见 11 §Node-RED 集成）。不带 token 时返回 401 信封，可用于验证路由已注册。
+
+### 3.11 websocket
 
 | 方法 | 路径 | Auth | 旧位置 | 新类 |
 |------|------|------|--------|------|
@@ -260,7 +273,7 @@ Task<HttpResponsePtr> RuntimeDeviceController::control(
 ### 4.2 实现：`Result` 工具类 + 全局异常
 
 ```cpp
-// include/ibmcp/core/result.h
+// include/core/result.h
 #pragma once
 #include <drogon/HttpResponse.h>
 #include <nlohmann/json.hpp>
@@ -320,7 +333,7 @@ int64_t userId = user["id"].as<int64_t>();
 ### 5.1 公开白名单
 
 以下路径在 advice 中直接放行（不校验 token）：
-- `ibmcp::config::isPublicPath(path)` 返回真的路径：白名单实际来自 `config.json` 的 `custom_config.public_paths` 数组（`backend/config.json:55`，`core/config.cpp:70` 读取），当前为 `/api/v1/auth/login`、`/api/v1/auth/refresh`、`/api/v1/ping`、`/api/v1/openapi.json`、`/api/v1/docs`、`/api/v1/redoc`；
+- `ibmcp::config::isPublicPath(path)` 返回真的路径：白名单实际来自 `config.json` 的 `custom_config.public_paths` 数组（`backend/config.json`，`core/config.cpp` 读取），当前为 `/api/v1/auth/login`、`/api/v1/auth/refresh`、`/api/v1/ping`、`/api/v1/redis/ping`、`/api/v1/openapi.json`、`/api/v1/docs`、`/api/v1/redoc`（以 `backend/config.json` 为准）；
 - WebSocket 端点 `/ws/push`、`/api/v1/ws/collect`（首帧 query 自带 token，在对应 `WebSocketController::handleNewConnection` 中校验）。
 
 其余全部需带有效 Bearer token。

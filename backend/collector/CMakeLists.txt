@@ -49,3 +49,9 @@ if(OPEN62541_FOUND)
     target_link_directories(ibmcp_collector PUBLIC ${OPEN62541_LIBRARY_DIRS})
     target_link_libraries(ibmcp_collector PUBLIC ${OPEN62541_LIBRARIES})
 endif()
+
+# 单元测试：仅在显式构建 collector_tests 目标时编译（EXCLUDE_FROM_ALL），
+# 不进入默认 all 目标，避免影响生产构建；GTest 不可用时内部自动跳过。
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
+    add_subdirectory(tests)
+endif()

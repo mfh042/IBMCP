@@ -1,3 +1,4 @@
+@chcp 65001>nul
 @echo off
 setlocal
 cd /d "%~dp0frontend"
@@ -6,30 +7,30 @@ set "PORT=%~1"
 if "%PORT%"=="" set "PORT=5173"
 echo %PORT%| findstr /r "^[0-9][0-9]*$" >nul
 if errorlevel 1 (
-    echo [´íÎó] ¶Ë¿Ú±ØĞëÊÇÊı×Ö: %PORT%
-    echo ÓÃ·¨: start-frontend.bat [¶Ë¿Ú]   Ä¬ÈÏ 5173
-    echo °´ÈÎÒâ¼ü¹Ø±Õ...
+    echo [é”™è¯¯] ç«¯å£å¿…é¡»æ˜¯æ•°å­—: %PORT%
+    echo ç”¨æ³•: start-frontend.bat [ç«¯å£]   é»˜è®¤ 5173
+    echo æŒ‰ä»»æ„é”®å…³é—­...
     pause >nul
     endlocal & exit /b 1
 )
 
-echo [IBMCP] Ç°¶Ë¿ìËÙÆô¶¯  ¶Ë¿Ú=%PORT%
-echo [IBMCP] ¹¤×÷Ä¿Â¼: %cd%
+echo [IBMCP] å‰ç«¯å¿«é€Ÿå¯åŠ¨  ç«¯å£=%PORT%
+echo [IBMCP] å·¥ä½œç›®å½•: %cd%
 echo.
 
 where npm >nul 2>&1
 if errorlevel 1 (
-    echo [´íÎó] Î´ÕÒµ½ npm£¬ÇëÏÈ°²×° Node.js ^(https://nodejs.org^)
-    echo °´ÈÎÒâ¼ü¹Ø±Õ...
+    echo [é”™è¯¯] æœªæ‰¾åˆ° npmï¼Œè¯·å…ˆå®‰è£… Node.js ^(https://nodejs.org^)
+    echo æŒ‰ä»»æ„é”®å…³é—­...
     pause >nul
     endlocal & exit /b 1
 )
 
 if not exist "node_modules" (
-    echo [Ç°¶Ë] Î´ÕÒµ½ node_modules£¬ÕıÔÚ°²×°ÒÀÀµ ^(Ê×´Î½ÏÂı^)...
+    echo [å‰ç«¯] æœªæ‰¾åˆ° node_modulesï¼Œæ­£åœ¨å®‰è£…ä¾èµ– ^(é¦–æ¬¡è¾ƒæ…¢^)...
     call npm install
     if errorlevel 1 (
-        echo [Ç°¶Ë] npm install Ê§°Ü£¬°´ÈÎÒâ¼ü¹Ø±Õ...
+        echo [å‰ç«¯] npm install å¤±è´¥ï¼ŒæŒ‰ä»»æ„é”®å…³é—­...
         pause >nul
         endlocal & exit /b 1
     )
@@ -37,27 +38,36 @@ if not exist "node_modules" (
 
 findstr /C:"VITE_API_TARGET=http://192.168.80.136:8000" ".env.development" >nul
 if errorlevel 1 (
-    echo [¾¯¸æ] .env.development µÄ VITE_API_TARGET Î´Ö¸ÏòÔ¶³Ìºó¶Ë£¡
-    echo        Ó¦Îª: VITE_API_TARGET=http://192.168.80.136:8000
-    echo        ·ñÔòÇ°¶Ë½«ÎŞ·¨Á¬½Óºó¶Ë¡£
+    echo [è­¦å‘Š] .env.development çš„ VITE_API_TARGET æœªæŒ‡å‘è¿œç¨‹åç«¯ï¼
+    echo        åº”ä¸º: VITE_API_TARGET=http://192.168.80.136:8000
+    echo        å¦åˆ™å‰ç«¯å°†æ— æ³•è¿æ¥åç«¯ã€‚
     echo.
 )
 
-echo [Ç°¶Ë] ¼ì²é¶Ë¿Ú %PORT% Õ¼ÓÃÇé¿ö...
+findstr /C:"VITE_NODERED_TARGET=http://192.168.80.136:1880" ".env.development" >nul
+if errorlevel 1 (
+    echo [è­¦å‘Š] .env.development æœªé…ç½® VITE_NODERED_TARGETï¼
+    echo        åº”ä¸º: VITE_NODERED_TARGET=http://192.168.80.136:1880
+    echo        å¦åˆ™ Node-RED æµç¼–è¾‘å™¨ iframe å°†æ— æ³•åŠ è½½ã€‚
+    echo.
+)
+
+echo [å‰ç«¯] æ£€æŸ¥ç«¯å£ %PORT% å ç”¨æƒ…å†µ...
 set "OCCUPIED=0"
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr /C:":%PORT% " ^| findstr LISTENING') do (
-    echo   ¶Ë¿Ú %PORT% ±» PID=%%a Õ¼ÓÃ£¬ÏÈÍ£Ö¹...
+    echo   ç«¯å£ %PORT% è¢« PID=%%a å ç”¨ï¼Œå…ˆåœæ­¢...
     taskkill /F /PID %%a >nul 2>&1
     set "OCCUPIED=1"
 )
-if "%OCCUPIED%"=="0" echo   ¶Ë¿Ú %PORT% ¿ÕÏĞ
+if "%OCCUPIED%"=="0" echo   ç«¯å£ %PORT% ç©ºé—²
 timeout /t 1 /nobreak >nul
 
 echo.
-echo [Ç°¶Ë] Æô¶¯ Vite dev server
-echo [Ç°¶Ë] ·ÃÎÊµØÖ· : http://localhost:%PORT%
-echo [Ç°¶Ë] API ´úÀí : http://192.168.80.136:8000
-echo [Ç°¶Ë] Í£Ö¹Çë°´ Ctrl+C
+echo [å‰ç«¯] å¯åŠ¨ Vite dev server
+echo [å‰ç«¯] è®¿é—®åœ°å€    : http://localhost:%PORT%
+echo [å‰ç«¯] API ä»£ç†    : http://192.168.80.136:8000
+echo [å‰ç«¯] Node-RED ä»£ç†: http://192.168.80.136:1880  (iframe /nodered/)
+echo [å‰ç«¯] åœæ­¢è¯·æŒ‰ Ctrl+C
 echo.
 
 call npm run dev -- --port %PORT% --strictPort

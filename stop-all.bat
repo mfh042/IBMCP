@@ -1,3 +1,4 @@
+@chcp 65001>nul
 @echo off
 setlocal
 cd /d "%~dp0"
@@ -7,27 +8,31 @@ set "FPORT=%~2"
 if "%BPORT%"=="" set "BPORT=8000"
 if "%FPORT%"=="" set "FPORT=5173"
 
-echo [IBMCP] Ò»¼üÍ£Ö¹: ºó¶Ë ^(¶Ë¿Ú %BPORT%^) + Ç°¶Ë ^(¶Ë¿Ú %FPORT%^)
+echo [IBMCP] ä¸€é”®åœæ­¢: åŽç«¯ ^(ç«¯å£ %BPORT%^) + å‰ç«¯ ^(ç«¯å£ %FPORT%^)
 echo.
 
-echo ===== 1/2 Í£Ö¹ºó¶Ë =====
+echo ===== 1/2 åœæ­¢åŽç«¯ =====
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0deployments\openeuler\start-backend.ps1" -Mode stop -Port %BPORT%
+set "BRC=%ERRORLEVEL%"
 
 echo.
-echo ===== 2/2 Í£Ö¹Ç°¶Ë =====
+echo ===== 2/2 åœæ­¢å‰ç«¯ =====
 set "KILLED=0"
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr /C:":%FPORT% " ^| findstr LISTENING') do (
-    echo   ÖÕÖ¹½ø³Ì PID=%%a
-    taskkill /F /PID %%a >nul 2>&1
-    set "KILLED=1"
+    echo %%a| findstr /r "^[0-9][0-9]*$" >nul && (
+        echo   ç»ˆæ­¢è¿›ç¨‹ PID=%%a
+        taskkill /F /PID %%a >nul 2>&1
+        set "KILLED=1"
+    )
 )
 if "%KILLED%"=="0" (
-    echo   Î´·¢ÏÖÕ¼ÓÃ %FPORT% ¶Ë¿ÚµÄ½ø³Ì£¨Ç°¶Ë¿ÉÄÜÎ´ÔËÐÐ£©
+    echo   æœªå‘çŽ°å ç”¨ %FPORT% ç«¯å£çš„è¿›ç¨‹ï¼ˆå‰ç«¯å¯èƒ½æœªè¿è¡Œï¼‰
 ) else (
-    echo   Ç°¶ËÒÑÍ£Ö¹
+    echo   å‰ç«¯å·²åœæ­¢
 )
 
 echo.
-echo [IBMCP] Ç°ºó¶ËÍ£Ö¹Á÷³ÌÍê³É
+echo [IBMCP] å‰åŽç«¯åœæ­¢æµç¨‹å®Œæˆ
 timeout /t 4 /nobreak >nul
+if not "%BRC%"=="0" (endlocal & exit /b %BRC%)
 endlocal & exit /b 0

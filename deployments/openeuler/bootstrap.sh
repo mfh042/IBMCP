@@ -124,7 +124,7 @@ build_trantor_and_drogon() {
     cmake --build "$src/build-drogon" -j"$(nproc)" || { echo "  Drogon 编译失败"; return 1; }
     cmake --install "$src/build-drogon" || { echo "  Drogon 安装失败"; return 1; }
 
-    # drogon_ctl 放入 PATH（已装到 drogon/bin；同时兼容历史上的 /usr/local/bin）
+    # drogon_ctl 放入 PATH（装到 drogon/bin；由 /etc/profile.d/ibmcp.sh 暴露到 PATH，统一走 ibmbuild）
     mkdir -p "$IBMCP_BUILD_DIR/drogon/bin"
     [ -x "$IBMCP_BUILD_DIR/drogon/bin/drogon_ctl" ] || cp -f "$src/build-drogon/drogon_ctl" "$IBMCP_BUILD_DIR/drogon/bin/" 2>/dev/null || true
     ldconfig

@@ -48,6 +48,11 @@ export default defineConfig(({mode}) => {
                     ws: true,
                     changeOrigin: true,
                 },
+                '/nodered': {
+                    target: env.VITE_NODERED_TARGET || 'http://127.0.0.1:1880',
+                    ws: true,
+                    changeOrigin: true,
+                },
             },
         },
         build: {

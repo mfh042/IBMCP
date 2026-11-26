@@ -1,3 +1,4 @@
+@chcp 65001>nul
 @echo off
 setlocal
 cd /d "%~dp0"
@@ -6,15 +7,15 @@ set "PORT=%~1"
 if "%PORT%"=="" set "PORT=8000"
 echo %PORT%| findstr /r "^[0-9][0-9]*$" >nul
 if errorlevel 1 (
-    echo [´íÎó] ¶Ë¿Ú±ØÐëÊÇÊý×Ö: %PORT%
-    echo ÓÃ·¨: stop-backend.bat [¶Ë¿Ú]   Ä¬ÈÏ 8000
-    echo °´ÈÎÒâ¼ü¹Ø±Õ...
+    echo [é”™è¯¯] ç«¯å£å¿…é¡»æ˜¯æ•°å­—: %PORT%
+    echo ç”¨æ³•: stop-backend.bat [ç«¯å£]   é»˜è®¤ 8000
+    echo æŒ‰ä»»æ„é”®å…³é—­...
     pause >nul
     endlocal & exit /b 1
 )
 
-echo [IBMCP] Í£Ö¹ºó¶Ë (openEuler Ô¶³Ì ibmcp-api, ¶Ë¿Ú %PORT%)
-echo [IBMCP] ÏîÄ¿¸ù: %cd%
+echo [IBMCP] åœæ­¢åŽç«¯ (openEuler è¿œç¨‹ ibmcp-api, ç«¯å£ %PORT%)
+echo [IBMCP] é¡¹ç›®æ ¹: %cd%
 echo.
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0deployments\openeuler\start-backend.ps1" -Mode stop -Port %PORT%
@@ -22,8 +23,8 @@ set "RC=%ERRORLEVEL%"
 
 echo.
 if not "%RC%"=="0" (
-    echo [IBMCP] Ö´ÐÐÊ§°Ü ^(exit %RC%^)
+    echo [IBMCP] æ‰§è¡Œå¤±è´¥ ^(exit %RC%^)
 )
-echo °´ÈÎÒâ¼ü¹Ø±Õ´°¿Ú...
+echo æŒ‰ä»»æ„é”®å…³é—­çª—å£...
 pause >nul
 endlocal & exit /b %RC%

@@ -29,7 +29,7 @@
 │                                                                              │
 │  ┌──────────────── HttpControllers ───────────────┐  ┌──── WsController ────┐ │
 │  │ auth/static/config/data/runtime/alarms/        │  │ /ws/push             │ │
-│  │ control/collector/ping                         │  │ 四主题订阅广播        │ │
+│  │ control/collector/ping/node-red                │  │ 四主题订阅广播        │ │
 │  └────────────────────────┬───────────────────────┘  └──────────┬───────────┘ │
 │                           │ 统一包膜 Advice / JWT 鉴权 PostRoutingAdvice │     │
 │  ┌────────────────────────▼─────────────────────────────────────▼──────────┐  │
@@ -112,7 +112,7 @@
 
 ### 4.1 单一进程
 
-整个后端是一个可执行文件 `ibmcp_server`（`backend/CMakeLists.txt:46`，systemd 拉起）。无 Python 解释器、无 GIL、无 IPC。
+整个后端是一个可执行文件 `ibmcp_server`（`backend/CMakeLists.txt:56`，systemd 拉起）。无 Python 解释器、无 GIL、无 IPC。
 
 ### 4.2 线程构成
 
@@ -138,33 +138,30 @@
 
 ```
 02-IBMCP/
-├── backend/                    # 旧 FastAPI（迁移期保留，完成后可删，见 06）
-├── backend/collector/              # 采集核心（保留，移除 pybind11 绑定层，产出静态库）
-│   ├── CMakeLists.txt          # 改为 add_library(ibmcp_collector STATIC ...)
-│   └── src/bindings/           # 删除 module.cpp（不再绑定 Python）
-├── backend/                # 新增：Drogon 后端
-│   ├── CMakeLists.txt          # 主工程，链接 Drogon + ibmcp_collector 静态库
-│   ├── config.json             # Drogon 运行配置（监听、DB、Redis、日志）
-│   ├── main.cpp                # 入口：初始化 Service → app().run()
-│   ├── cmake/                  # 第三方 Find 模块 / FetchContent
-│   ├── include/
-│   │   └── ibmcp/
-│   │       ├── core/           # Config, Result, Errors, JwtUtil, PasswordUtil, Cache, AuthRedis
-│   │       ├── db/             # DbClient 封装、迁移器、Redis 客户端封装
-│   │       ├── filter/         # AuthFilter, CorsFilter, EnvelopeAdvice
-│   │       ├── controller/     # HttpControllers, WsController
-│   │       ├── service/        # 业务 Service
-│   │       ├── ws/             # WsHub（Redis Pub/Sub 推送骨干）
-│   │       └── dto/            # 请求/响应 DTO（nlohmann json 序列化）
+├── backend/                    # Drogon 后端（单一 C++ 工程，无 Python）
+│   ├── CMakeLists.txt          # 主工程：enable_testing() + add_executable(ibmcp_server)，链接 Drogon + ibmcp_collector
+│   ├── config.json             # Drogon 运行配置（监听、DB、Redis、日志、public_paths 白名单）
+│   ├── migrations/             # SQL 迁移脚本（0001~0005，替代 Alembic）
+│   ├── include/                # 头文件（无 ibmcp/ 包装层，直接按模块分目录）
+│   │   ├── controller/         # 14 个 HttpController + 1 个 WsController 头文件
+│   │   ├── core/               # Config, Result, Errors, JwtUtil, PasswordUtil, Cache, AuthRedis
+│   │   ├── db/                 # DbClient / Redis 封装、迁移器
+│   │   ├── filter/             # AuthFilter, CorsFilter
+│   │   ├── service/            # 业务 Service
+│   │   ├── ws/                 # WsHub（Redis Pub/Sub 推送骨干）
+│   │   ├── collector/          # 采集器对外头文件（CollectorBridge 等）
+│   │   ├── control/            # 控制命令相关
+│   │   └── util/               # 工具
 │   ├── src/                    # 对应实现
-│   ├── models/                 # drogon_ctl 生成的 ORM Model（或手写）
-│   ├── migrations/             # SQL 迁移脚本（替代 Alembic）
-│   └── tests/                  # GoogleTest 单元/集成测试
+│   │   └── main.cpp            # 入口：初始化 Service → app().run()
+│   └── collector/              # 采集核心静态库（已移除 pybind11 绑定层）
+│       ├── CMakeLists.txt      # add_library(ibmcp_collector STATIC ...) + 条件 add_subdirectory(tests)
+│       └── tests/              # GoogleTest 单元测试（EXCLUDE_FROM_ALL，由 test.bat 构建运行）
 ├── collector-python/           # 删除（见 06）
 ├── frontend/                   # 不变（Vue3，构建产物给 Nginx）
 ├── deployments/openeuler/      # 更新：bootstrap.sh / build.sh / deploy.sh（移除 Python）
 └── packaging/
-    ├── nginx/ibmcp.conf        # 微调：代理目标仍是 127.0.0.1:8000（或改为 8080）
+    ├── nginx/ibmcp.conf        # 反代 /api→8000、/ws 升级、/nodered/→1880（Node-RED 编辑器）
     └── systemd/ibmcp-api.service  # 改为启动 ibmcp_server 二进制，移除 venv/uvicorn
 ```
 

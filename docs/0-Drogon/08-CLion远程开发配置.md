@@ -14,12 +14,12 @@
 | 部署服务器（自动上传） | `OE-Remote`（SFTP） | [.idea/deployment.xml](../../.idea/deployment.xml) |
 | 上传映射 | 本地 `$PROJECT_DIR$` → 欧拉 `/home/meng/ibmcp` | deployment.xml 第 9 行 |
 | CMake Profile | `Debug-OE-Remote`（工具链 `OE-Remote`） | [.idea/workspace.xml](../../.idea/workspace.xml) 第 29 行 |
-| Run Configuration | `ibmcp_server`（CMake Application） | workspace.xml 第 565 行 |
+| Run Configuration | `ibmcp_server`（CMake Application） | workspace.xml 第 367 行 |
 | 本地构建目录 | `cmake-build-debug-oe-remote/` | CLion 自动生成 |
 
 **工作流**：在 Windows 的 CLion 里编辑代码 → CLion 自动（或手动）上传到欧拉 → 用欧拉的 cmake/gcc 编译 → 在欧拉运行/调试。Windows 本地保留完整源码副本，是开发的主端。
 
-> 已删除的旧本地 IDE 辅助文件（进了 Windows 回收站，可恢复）：`backend/.ide-deps/`、项目根 `compile_commands.json`、`.clangd`、`.vscode/`。这些是给 VS Code/clangd 用的，**CLion 远程工具链不依赖它们**——CLion 会自动从欧拉同步头文件到本地索引缓存，所以 `#include <drogon/...>` 不会报红。
+> 已删除的旧本地 IDE 辅助文件（进了 Windows 回收站，可恢复）：`backend/.ide-deps/`、项目根 `compile_commands.json`、`.clangd`。`.vscode/` 仍保留（含 `sftp.json`），是给 VS Code 用的，**CLion 远程工具链不依赖它**——CLion 会自动从欧拉同步头文件到本地索引缓存，所以 `#include <drogon/...>` 不会报红。
 
 ---
 
@@ -64,9 +64,9 @@
 
 `backend/CMakeLists.txt` 已硬编码依赖路径，CLion 远程端无需额外参数：
 
-- 第 13 行：`set(IBMCP_BUILD_DIR "/home/meng/ibmbuild")`
-- 第 15–22 行：自动设置 `CMAKE_PREFIX_PATH`（`ibmbuild/drogon/cmake`、`ibmbuild/trantor/cmake`）和 `PKG_CONFIG_PATH`（modbus / open62541 / mosquitto）。
-- 第 24 行：`find_package(Drogon CONFIG REQUIRED PATHS ".../drogon/cmake" NO_DEFAULT_PATH)` 直接定位 Drogon 静态库。
+- 第 15 行：`set(IBMCP_BUILD_DIR "/home/meng/ibmbuild")`
+- 第 17–24 行：自动设置 `CMAKE_PREFIX_PATH`（17–20，`ibmbuild/drogon/cmake`、`ibmbuild/trantor/cmake`）和 `PKG_CONFIG_PATH`（22–24，modbus / open62541 / mosquitto）。
+- 第 26 行：`find_package(Drogon CONFIG REQUIRED PATHS ".../drogon/cmake" NO_DEFAULT_PATH)` 直接定位 Drogon 静态库。
 
 CLion 的 `Debug-OE-Remote` Profile 已绑定远程工具链，Reload CMake 后底部 CMake 窗口应显示绿色成功，`#include <drogon/drogon.h>` 不报红。
 

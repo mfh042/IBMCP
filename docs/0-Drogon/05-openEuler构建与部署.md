@@ -203,7 +203,7 @@ ldconfig -p | grep -E 'libmodbus|libopen62541'
       "dbname": "ibmcp", "user": "ibmcp", "passwd": "ibmcp", "number_of_connections": 5 }
   ],
   "redis_clients": [
-    { "name": "default", "host": "127.0.0.1", "port": 6379, "passwd": "ibmcp2026",
+    { "name": "default", "host": "127.0.0.1", "port": 6379, "passwd": "",
       "db": 0, "number_of_connections": 5, "timeout": 1.0 }
   ],
   "custom_config": {
@@ -211,7 +211,7 @@ ldconfig -p | grep -E 'libmodbus|libopen62541'
     "pg_dsn": "postgresql://ibmcp:ibmcp@127.0.0.1:5432/ibmcp",
     "migrations_dir": "./migrations",
     "cors_origins": ["http://localhost:5173"],
-    "public_paths": ["/api/v1/auth/login", "/api/v1/ping", "/api/v1/openapi.json", ...]
+    "public_paths": ["/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/ping", "/api/v1/redis/ping", "/api/v1/openapi.json", "/api/v1/docs", "/api/v1/redoc"]
   }
 }
 ```
@@ -307,6 +307,20 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
+    # Node-RED 编辑器同源反代：透传 /nodered/ 前缀到容器 1880，含编辑器 WS（/nodered/comms）。
+    # 前端 iframe 以 src="/nodered/" 嵌入；Node-RED settings.js 需设 httpAdminRoot: '/nodered'。
+    location /nodered/ {
+        proxy_pass http://127.0.0.1:1880;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
     location / { try_files $uri $uri/ /index.html; }
 }
 ```
@@ -384,7 +398,7 @@ bash deployments/openeuler/build.sh && sudo bash deployments/openeuler/deploy.sh
 | 文件 / 目录 | 说明 |
 |---|---|
 | `docs/` | 不传不影响运行；传上去方便在欧拉端查阅。建议保留同步 |
-| `backend/collector/tests/` | 单测代码；`backend/CMakeLists.txt` **没有** `add_subdirectory(tests)`，不编进主二进制，只有要在欧拉跑单测时才需要 |
+| `backend/collector/tests/` | 单测代码；`backend/collector/CMakeLists.txt` **有条件** `add_subdirectory(tests)`（经 `backend/CMakeLists.txt` 的 `enable_testing()` 拉入），`collector_tests` 目标为 `EXCLUDE_FROM_ALL`，不编进主二进制。`test.bat` 需在欧拉端构建运行该目标，故已纳入同步 |
 | `packaging/docker/Dockerfile` | 当前后端是欧拉本地 `g++` 编译，**不走 docker 构建**，用不到；只有改成容器化构建才需要 |
 | `deployments/openeuler/make-bundle.sh` | 离线打包辅助，仅在做离线 bundle 时用 |
 
@@ -403,8 +417,6 @@ cmake-build-*, backend/build, build, build2, dist, compile_commands.json
 euler-remote.ps1
 # 文档（可选，不传以瘦身同步包）
 docs
-# 单测（不编进主二进制，不在欧拉跑单测则不传）
-backend/collector/tests
 # 可选辅助：离线打包 / docker 构建（当前流程不用）
 packaging/docker, make-bundle.sh
 # 临时 / 日志 / marker / IDE 截图
@@ -430,7 +442,7 @@ frontend/src  ──npm run build──► frontend/dist  ──单独上传─�
                               /home/meng/ibmbuild/（欧拉本地生成，不传）
                               drogon / trantor / 驱动库 + env.sh
 
-✗ 不传：frontend/ 源码与 node_modules、docs、collector/tests、
+✗ 不传：frontend/ 源码与 node_modules、docs、
        packaging/docker、make-bundle.sh、.trae/.idea/.vscode、
        euler-remote.ps1、build 缓存、compile_commands.json
 ```

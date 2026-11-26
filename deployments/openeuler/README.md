@@ -13,7 +13,7 @@
 
 ## 1. 文件清单与职责
 
-共 10 个文件，按用途分四组：
+共 13 个脚本/配置文件（不含本 README），按用途分五组：
 
 ### A. 环境初始化（从干净 OS 到可构建）
 
@@ -44,6 +44,16 @@
 |---|---|---|
 | **`docker-compose.yml`** | 三个纯服务容器定义：PostgreSQL 15（:5432）、Redis 7（:6379）、Node-RED（:1880）。各带命名卷（`ibmcp_pg_data` / `ibmcp_redis_data` / `ibmcp_nodered_data`）和健康检查。**后端 + Nginx 不容器化**（需访问宿主 libpq 与协议驱动 .so），裸机跑 | `docker compose -f docker-compose.yml up -d` |
 | **`euler-remote.ps1`** | **Windows 11 开发侧**的远程连接工具（PowerShell）。`dot-source` 后提供：`eInitKey`（装 SSH 公钥免密）、`e`（远程执行）、`esudo`（远程 sudo，自动喂密码）、`eup`/`edown`（scp 上传/下载）、`eSync`（tar over ssh 同步源码到欧拉，带排除清单）、`eResetRoot`（清远端旧 FastAPI 残留）。**含明文密码，已被 `.gitignore` 排除（`deployments/openeuler/euler*.ps1`），不入仓库** | PS：`. .\euler-remote.ps1` 后调函数 |
+
+### E. 测试与一键启动编排
+
+| 文件 | 角色 | 执行方式 | 说明 |
+|---|---|---|---|
+| **`start-backend.ps1`** | Windows 侧后端一键部署编排。`dot-source` `euler-remote.ps1` 后：`eSync` 同步源码 → 欧拉端 `build.sh` 编译 → `cmake --install` → 重启 `ibmcp-api` systemd 服务。支持 `-Mode build/stop/restart`、`-Port` | 项目根 `start-backend.bat` 调用，或 `powershell -File start-backend.ps1` | 项目根 `stop-backend.bat` / `stop-all.bat` 也委托它（`-Mode stop`） |
+| **`run-tests.ps1`** | Windows 侧测试编排。`eSync` 同步源码（含测试目录）→ 上传 `run_tests.sh` → 远程执行冒烟 + 采集器单测 → 回显汇总、透传退出码 | 项目根 `test.bat` 调用 | 非侵入：只跑测试，不重编、不重启线上服务 |
+| **`run_tests.sh`** | 欧拉端远程测试脚本。冒烟检查（systemd / ping / nginx / Node-RED 容器 / node-red 路由）+ cmake 重配构建 `collector_tests` 目标 + `ctest` 运行采集器单测（GTest） | 由 `run-tests.ps1` 上传后 `bash` 执行 | 无口令硬编码；用 `sudo -n docker` 与无 token 探活 |
+
+> 项目根另有 7 个 `.bat` 启动器（`start-backend` / `start-frontend` / `start-all` / `stop-backend` / `stop-frontend` / `stop-all` / `test`），是 Windows 开发侧日常入口，编码统一为 **UTF-8（无 BOM）+ CRLF**，且首行均为 `@chcp 65001>nul`、次行 `@echo off`。原理：`cmd.exe` 对无 BOM 脚本默认按系统 ANSI（GBK）解析，故首行先用 `@chcp 65001>nul` 把代码页切到 UTF-8——cmd 会随即用新代码页重新解析后续行，中文即正确显示；首行加 `@` 避免切换前命令回显。之所以**不用 BOM**：在 936（GBK）控制台下 cmd 不识别 UTF-8 BOM，BOM 字节会粘到首行命令上（如 `﻿@echo off` → `'锘緻echo' 不是内部或外部命令`），并使 `@echo off` 失效导致全程回显。无 BOM + 首行切码方案在 65001 与 936 控制台下均干净无错。注意：含中文的 `.ps1`（如 `euler-remote.ps1`）仍须 **UTF-8 with BOM**（PowerShell 5 加载要求），与 `.bat` 的无 BOM 要求不同。
 
 ---
 
@@ -162,9 +172,10 @@ eSync
 | 构建产物 / 缓存 | `cmake-build-*` `backend/build` `build` `build2` `dist` `compile_commands.json` | 欧拉端 `build.sh` 自行生成 |
 | 仅 Windows 运行的工具 | `euler-remote.ps1` | 只在 Windows 侧用，且含明文密码 |
 | 文档 | `docs` | 可选，不传以瘦身同步包 |
-| 单测 | `backend/collector/tests` | 不编进主二进制 |
 | 可选辅助（当前流程不用） | `packaging/docker` `make-bundle.sh` | 离线打包/docker 构建，日常同步不需要 |
 | 临时 / 日志 / marker | `_fix_temp` `*.log` `.clion.source.upload.marker` `.remote-include` `.screenshots` | 杂项 |
+
+> 注：测试源码 `backend/collector/tests` 已**纳入**同步范围（`test.bat` 需要在欧拉端构建运行 `collector_tests`），不再排除；该目标是 `EXCLUDE_FROM_ALL`，不进生产构建。
 
 **两个"不传但必须单独处理"的关键项：**
 

@@ -1,3 +1,4 @@
+@chcp 65001>nul
 @echo off
 setlocal
 cd /d "%~dp0"
@@ -9,38 +10,42 @@ if "%FPORT%"=="" set "FPORT=5173"
 
 echo %BPORT%| findstr /r "^[0-9][0-9]*$" >nul
 if errorlevel 1 (
-    echo [´íÎó] ºó¶Ë¶Ë¿Ú±ØÐëÊÇÊý×Ö: %BPORT%
-    echo ÓÃ·¨: start-all.bat [ºó¶Ë¶Ë¿Ú] [Ç°¶Ë¶Ë¿Ú]   Ä¬ÈÏ 8000 5173
+    echo [é”™è¯¯] åŽç«¯ç«¯å£å¿…é¡»æ˜¯æ•°å­—: %BPORT%
+    echo ç”¨æ³•: start-all.bat [åŽç«¯ç«¯å£] [å‰ç«¯ç«¯å£]   é»˜è®¤ 8000 5173
     pause >nul
     endlocal & exit /b 1
 )
 echo %FPORT%| findstr /r "^[0-9][0-9]*$" >nul
 if errorlevel 1 (
-    echo [´íÎó] Ç°¶Ë¶Ë¿Ú±ØÐëÊÇÊý×Ö: %FPORT%
+    echo [é”™è¯¯] å‰ç«¯ç«¯å£å¿…é¡»æ˜¯æ•°å­—: %FPORT%
     pause >nul
     endlocal & exit /b 1
 )
 
-echo [IBMCP] Ò»¼üÆô¶¯: ºó¶Ë ^(¶Ë¿Ú %BPORT%^) + Ç°¶Ë ^(¶Ë¿Ú %FPORT%^)
-echo   Æô¶¯Ç°Èô¶Ë¿Ú±»Õ¼ÓÃ»á×Ô¶¯ÏÈÍ£Ö¹Õ¼ÓÃ½ø³Ì¡£
+echo [IBMCP] ä¸€é”®å¯åŠ¨: åŽç«¯ ^(ç«¯å£ %BPORT%^) + å‰ç«¯ ^(ç«¯å£ %FPORT%^)
+echo   å¯åŠ¨å‰è‹¥ç«¯å£è¢«å ç”¨ä¼šè‡ªåŠ¨å…ˆåœæ­¢å ç”¨è¿›ç¨‹ã€‚
 echo.
 
-REM ºó¶Ë´°¿Ú: Í¬²½Ô´Âë + ±àÒë + ÖØÆô·þÎñ (Ê×´ÎÐè¼¸·ÖÖÓ)
-start "IBMCP-ºó¶Ë" cmd /k ""%~dp0start-backend.bat" build %BPORT% %FPORT%"
+REM åŽç«¯çª—å£: åŒæ­¥æºç  + ç¼–è¯‘ + é‡å¯æœåŠ¡ (é¦–æ¬¡éœ€å‡ åˆ†é’Ÿ)
+start "IBMCP-åŽç«¯" cmd /k ""%~dp0start-backend.bat" build %BPORT% %FPORT%"
 
-REM ÉÔµÈºó¶Ë¿ªÊ¼Í¬²½£¬ÔÙ¿ªÇ°¶Ë
+REM ç¨ç­‰åŽç«¯å¼€å§‹åŒæ­¥ï¼Œå†å¼€å‰ç«¯
 timeout /t 3 /nobreak >nul
 
-REM Ç°¶Ë´°¿Ú: ±¾µØ Vite dev server
-start "IBMCP-Ç°¶Ë" cmd /k ""%~dp0start-frontend.bat" %FPORT%"
+REM å‰ç«¯çª—å£: æœ¬åœ° Vite dev server
+start "IBMCP-å‰ç«¯" cmd /k ""%~dp0start-frontend.bat" %FPORT%"
 
-echo [IBMCP] ÒÑÔÚÁ½¸öÐÂ´°¿ÚÆô¶¯:
-echo   - ºó¶Ë ^(±àÒë+ÔËÐÐ^): http://192.168.80.136:%BPORT%
-echo   - Ç°¶Ë ^(Vite dev^):  http://localhost:%FPORT%
+echo [IBMCP] å·²åœ¨ä¸¤ä¸ªæ–°çª—å£å¯åŠ¨:
+echo   - åŽç«¯ ^(åŒæ­¥æºç +ç¼–è¯‘+é‡å¯æœåŠ¡^): http://192.168.80.136:%BPORT%
+echo   - å‰ç«¯ ^(Vite dev^):               http://localhost:%FPORT%
 echo.
-echo ºó¶Ë±àÒëÍê³Éºó£¬ä¯ÀÀÆ÷´ò¿ª http://localhost:%FPORT% ¼´¿ÉÁªµ÷¡£
-echo ±¾´°¿Ú¿É¹Ø±Õ£¬×Ó´°¿Ú»á±£Áô¡£
+echo æç¤º:
+echo   - åŽç«¯é¦–æ¬¡/æ”¹åŠ¨åŽç¼–è¯‘éœ€æ•°åˆ†é’Ÿï¼Œè¯·ç­‰å¾…åŽç«¯çª—å£æ˜¾ç¤º [3/3] å®Œæˆã€‚
+echo   - å‰ç«¯ dev ä»£ç†å·²é…ç½® API ^(:8000^) ä¸Ž Node-RED ^(:1880, iframe /nodered/^)ã€‚
+echo   - åŽç«¯å°±ç»ªåŽï¼Œæµè§ˆå™¨æ‰“å¼€ http://localhost:%FPORT% å³å¯è”è°ƒã€‚
+echo   - è¿è¡Œæµ‹è¯•: åŒå‡» test.bat ^(å†’çƒŸ + é‡‡é›†å™¨å•æµ‹^)ã€‚
+echo æœ¬çª—å£å¯å…³é—­ï¼Œå­çª—å£ä¼šä¿ç•™ã€‚
 echo.
-timeout /t 6 /nobreak >nul
+timeout /t 8 /nobreak >nul
 
 endlocal & exit /b 0

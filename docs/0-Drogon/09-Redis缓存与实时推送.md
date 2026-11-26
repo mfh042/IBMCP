@@ -23,7 +23,7 @@
 ```json
 "redis_clients": [{
   "name": "default", "host": "127.0.0.1", "port": 6379,
-  "passwd": "ibmcp2026", "db": 0,
+  "passwd": "", "db": 0,
   "is_fast": false, "number_of_connections": 5,
   "timeout": 1.0
 }]
@@ -31,7 +31,7 @@
 
 - `name=default`：代码通过 `drogon::app().getRedisClient("default")` 获取，封装于 [backend/src/db/redis.cpp](file:///e:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP-drogon/backend/src/db/redis.cpp) 的 `redis::client()`。
 - `timeout=1.0`：**关键参数**。Drogon `RedisClient::setTimeout`（0 / 负值 = 无界）。设为 1s 后，Redis 不可用时缓存读 / 黑名单查询在 ~1s 内以 `Command execution timeout` 失败并走 fail-open，避免请求挂起数十秒。
-- 健康探针：`GET /api/v1/redis/ping` 返回 `PONG` 与 `dbsize`（[redis_controller.cpp](file:///e:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP-drogon/backend/src/controller/redis_controller.cpp)）。
+- 健康探针：`GET /api/v1/redis/ping` 返回 `{"code":0,"data":{"redis":"ok","ping":"PONG","get":"1","dbsize":...}}`（[system_controller.cpp](file:///e:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP-drogon/backend/src/controller/system_controller.cpp) 的 `SystemController::redisPing`）。
 - 部署：Docker 容器 `ibmcp-redis`（redis7）映射 `6379`，由 [deployments/openeuler/docker-compose.yml](file:///e:/999-Dev/01-IBMCP-黑盒管控系统/02-IBMCP-drogon/deployments/openeuler/docker-compose.yml) 拉起。
 
 ## 3. 代码结构
