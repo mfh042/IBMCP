@@ -1,0 +1,33 @@
+# settings.js 定制清单（Node-RED 容器 /data/settings.js）
+#
+# Node-RED 默认 settings.js 很大且随版本变化，这里不提交整文件，只记录
+# 对默认文件的两处定制。新机器部署时在默认 settings.js 里找到对应位置替换即可。
+# 行号基于 nodered/node-red:latest（Node-RED v5.0.10）默认文件，仅供定位参考。
+
+# --- 定制 1：credentialSecret（约第 44 行，原默认是注释掉的空值）---
+# 一旦设定不可更改，否则 /data/flows_cred.json 解不开。迁卷时密钥必须一致。
+credentialSecret: "ibmcp-nodered-credential-secret-v1-9f3a2c7e",
+
+# --- 定制 2：adminAuth（约第 78 行，原默认是注释掉的）---
+# 给编辑器 + admin API 加登录。用户 admin，权限 *（全部）。
+# 密码哈希由 `node-red admin hash-pw` 生成（bcrypt cost 8）。
+adminAuth: {
+    type: "credentials",
+    users: [{
+        username: "admin",
+        password: "$2b$08$8gRbX22IbnP88EWHJC7bE.Ww5oXDc0Tqem1ur70Ag.z0l4mOUCaF.",
+        permissions: "*"
+    }]
+},
+
+# --- 定制 3：httpAdminRoot（约第 172 行，原默认是注释掉的 //httpAdminRoot: '/admin'）---
+# 把编辑器挂到 /nodered 前缀，配合 nginx 同源反代（location /nodered/ → 127.0.0.1:1880），
+# 让前端 iframe 以 src="/nodered/" 同源嵌入，避免跨域与直接暴露 1880 端口。
+# 设了之后根路径 / 会 404（未配 httpStatic），编辑器在 /nodered/；Modbus 采集（1502）不受影响。
+httpAdminRoot: '/nodered',
+
+# 验证方式（容器内或宿主）：
+#   curl -s http://127.0.0.1:1880/settings                       # 无 token → 应 HTTP 401
+#   curl -s -X POST http://127.0.0.1:1880/auth/token \
+#        -H 'Content-Type: application/x-www-form-urlencoded' \
+#        -d 'client_id=node-red-admin&grant_type=password&scope=*&username=admin&password=<密码>'

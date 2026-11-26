@@ -1,0 +1,168 @@
+[
+    {
+        "id": "tab-sim-plc",
+        "type": "tab",
+        "label": "IBMCP PLC Simulator",
+        "disabled": false,
+        "info": "IBMCP 设备模拟器：Modbus TCP 从站监听 0.0.0.0:1502，unit id 任意。\n保持寄存器映射（0-based index，与后端 Modicon 4x<offset> 对齐，index = offset-1）。\n一次写 26 个寄存器到 address 0（52 字节，间隙补 0），单批 < 125 合规。\n\nCNC-LATHE-01（数控车床）：\n  index 0-1  4x0001  spindle_speed  float  主轴转速 RPM（3000±600 正弦）\n  index 2-3  4x0003  spindle_load   float  主轴负载 %（45±35 正弦）\n  index 4-5  4x0005  coolant_temp   float  冷却液温度 ℃（38±12 正弦，故障时 75）\n  index 6    4x0007  run_status     uint16 运行状态（1=运行，故障时 2）\n  index 7    4x0008  emergency_stop uint16 急停信号（0=正常）\n\nMACHINING-01（立式加工中心）：\n  index 10-11 4x0011 feed_rate     float  进给速度 mm/min（1600±400 正弦）\n  index 20-21 4x0021 power_active  float  有功功率 kW（14±6 正弦）\n  index 22-23 4x0023 spindle_load  float  主轴负载 %（50±30 正弦）\n  index 24    4x0025 run_status    uint16 运行状态（1=运行）\n  index 25    4x0026 emergency_stop uint16 急停信号（0=正常）\n\n后端路由：protocol=modbustcp, host=127.0.0.1, port=1502, slave_id=1。\n注意：同设备点位必须落在连续 125 寄存器内，否则后端批量读超限失败。\n故障注入：点「注入故障」→ 车床冷却液温度冲到 75、状态变 2；点「复位」全量清零。"
+    },
+    {
+        "id": "srv-modbus",
+        "type": "modbus-server",
+        "z": "tab-sim-plc",
+        "name": "PLC Slave :1502",
+        "logEnabled": false,
+        "hostname": "0.0.0.0",
+        "serverPort": "1502",
+        "responseDelay": 10,
+        "delayUnit": "ms",
+        "coilsBufferSize": 1000,
+        "holdingBufferSize": 10000,
+        "inputBufferSize": 1000,
+        "discreteBufferSize": 1000,
+        "showErrors": true,
+        "showStatusActivities": true,
+        "x": 600,
+        "y": 160,
+        "wires": [
+            [],
+            [],
+            [],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "inj-gen",
+        "type": "inject",
+        "z": "tab-sim-plc",
+        "name": "每 1s 生成",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "1",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "1",
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 150,
+        "y": 100,
+        "wires": [
+            [
+                "func-gen"
+            ]
+        ]
+    },
+    {
+        "id": "func-gen",
+        "type": "function",
+        "z": "tab-sim-plc",
+        "name": "生成模拟量(双设备)",
+        "func": "let t = flow.get('t') || 0;\nt = t + 1;\nflow.set('t', t);\nconst fault = flow.get('fault') || false;\n// ---- CNC-LATHE-01 数控车床 ----\nlet spindle = 3000 + 600 * Math.sin(t / 9);\nlet load    = 45 + 35 * Math.sin(t / 11);\nlet cool    = 38 + 12 * Math.sin(t / 15);\nlet status  = 1;\nlet estop   = 0;\nif (fault) { cool = 75; status = 2; }\n// ---- MACHINING-01 立式加工中心 ----\nlet feed   = 1600 + 400 * Math.sin(t / 7);\nlet power  = 14 + 6 * Math.sin(t / 13);\nlet mLoad  = 50 + 30 * Math.sin(t / 8);\nlet mStatus = 1;\nlet mEstop  = 0;\n// 26 个寄存器 = 52 字节，一次写到 address 0（间隙补 0）\nconst buf = Buffer.alloc(52);\nbuf.writeFloatBE(spindle, 0);   // idx0-1  4x0001\nbuf.writeFloatBE(load, 4);      // idx2-3  4x0003\nbuf.writeFloatBE(cool, 8);      // idx4-5  4x0005\nbuf.writeUInt16BE(status, 12);  // idx6    4x0007\nbuf.writeUInt16BE(estop, 14);   // idx7    4x0008\nbuf.writeFloatBE(feed, 20);     // idx10-11 4x0011\nbuf.writeFloatBE(power, 40);    // idx20-21 4x0021\nbuf.writeFloatBE(mLoad, 44);    // idx22-23 4x0023\nbuf.writeUInt16BE(mStatus, 48); // idx24    4x0025\nbuf.writeUInt16BE(mEstop, 50);  // idx25    4x0026\nmsg.payload = { value: Array.from(buf), register: 'holding', address: 0, disableMsgOutput: 1 };\nmsg.topic = 'sim';\nreturn msg;",
+        "outputs": 1,
+        "noerr": 0,
+        "x": 380,
+        "y": 100,
+        "wires": [
+            [
+                "srv-modbus",
+                "dbg-val"
+            ]
+        ]
+    },
+    {
+        "id": "dbg-val",
+        "type": "debug",
+        "z": "tab-sim-plc",
+        "name": "模拟量",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "x": 600,
+        "y": 260,
+        "wires": []
+    },
+    {
+        "id": "inj-fault",
+        "type": "inject",
+        "z": "tab-sim-plc",
+        "name": "注入故障",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 150,
+        "y": 180,
+        "wires": [
+            [
+                "func-fault"
+            ]
+        ]
+    },
+    {
+        "id": "func-fault",
+        "type": "function",
+        "z": "tab-sim-plc",
+        "name": "置故障",
+        "func": "flow.set('fault', true);\nnode.status({ fill: 'red', shape: 'ring', text: 'fault injected' });\nreturn null;",
+        "outputs": 1,
+        "noerr": 0,
+        "x": 380,
+        "y": 180,
+        "wires": []
+    },
+    {
+        "id": "inj-reset",
+        "type": "inject",
+        "z": "tab-sim-plc",
+        "name": "复位",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 150,
+        "y": 260,
+        "wires": [
+            [
+                "func-reset"
+            ]
+        ]
+    },
+    {
+        "id": "func-reset",
+        "type": "function",
+        "z": "tab-sim-plc",
+        "name": "复位(清零+清故障)",
+        "func": "flow.set('fault', false);\nflow.set('t', 0);\nconst buf = Buffer.alloc(52, 0);\nmsg.payload = { value: Array.from(buf), register: 'holding', address: 0, disableMsgOutput: 1 };\nmsg.topic = 'reset';\nnode.status({ fill: 'green', shape: 'dot', text: 'reset done' });\nreturn msg;",
+        "outputs": 1,
+        "noerr": 0,
+        "x": 380,
+        "y": 260,
+        "wires": [
+            [
+                "srv-modbus"
+            ]
+        ]
+    }
+]
