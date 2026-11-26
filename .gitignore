@@ -52,3 +52,8 @@ data/
 *.db
 # openEuler 远程工具（含密码，不入仓库）
 deployments/openeuler/euler*.ps1
+
+# Trae IDE 产物：临时脚本 / AI 规划 / 规格草稿不入仓库；rules 为项目提交规范，保留
+.trae/tmp/
+.trae/documents/
+.trae/specs/
